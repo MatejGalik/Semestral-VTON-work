@@ -1,0 +1,22 @@
+/* Globálne pravidlá stránky – vkladajú sa cez <head> (bez scopovania Gradiom). */
+
+body,
+gradio-app {
+  background: var(--vton-bg) !important;
+}
+
+.gradio-container {
+  max-width: 1200px !important;
+  margin: 0 auto !important;
+  padding: 32px 24px 48px !important;
+}
+
+.gradio-container .main.fillable {
+  padding: 0 !important;
+}
+
+@media (max-width: 900px) {
+  .gradio-container {
+    padding: 20px 16px 32px !important;
+  }
+}

@@ -1,0 +1,409 @@
+/* Doplnkový CSS k ui/theme.py – karty, „+“ a „=“, segmentové tlačidlá.
+   Gradio každé pravidlo automaticky obmedzí na svoj kontajner. */
+
+:root {
+  /* farby --vton-* sa generujú z config.COLORS (ui/theme.py: color_vars_css) */
+  --vton-radius: 12px;
+  --vton-shadow: 0 1px 3px rgba(0, 0, 0, .06);
+  --font-heading: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+}
+
+/* Rozloženie stránky (body, .gradio-container) je v ui/page.css – Gradio
+   tento súbor scopuje pod .gradio-container, takže tam by nefungovalo. */
+
+.vton-page {
+  gap: 24px !important;
+}
+
+/* ---------- Hlavička ---------- */
+.vton-header-wrap {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.vton-header {
+  padding: 8px 0 4px;
+}
+
+.vton-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.vton-title {
+  font-family: var(--font-heading) !important;
+  font-weight: 500 !important;
+  font-size: clamp(26px, 4.2vw, 40px) !important;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  line-height: 1.1 !important;
+  color: var(--vton-text) !important;
+  margin: 0 !important;
+}
+
+.vton-subtitle {
+  margin: 10px 0 0 !important;
+  color: var(--vton-muted) !important;
+  font-size: 15px;
+}
+
+.vton-badge {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--vton-accent);
+  border: 1px solid var(--vton-accent);
+  border-radius: 999px;
+  padding: 3px 10px;
+  cursor: help;
+}
+
+/* ---------- Taby ---------- */
+.vton-tabs > .tab-wrapper,
+.vton-tabs .tab-container {
+  border-bottom: 1px solid var(--vton-border) !important;
+}
+
+.vton-tabs button[role="tab"] {
+  font-size: 14px;
+  color: var(--vton-muted);
+  letter-spacing: .02em;
+}
+
+.vton-tabs button[role="tab"][aria-selected="true"],
+.vton-tabs button[role="tab"].selected {
+  color: var(--vton-text) !important;
+}
+
+.vton-tabs button[role="tab"][aria-selected="true"]::after,
+.vton-tabs button[role="tab"].selected::after {
+  background: var(--vton-accent) !important;
+  height: 2px !important;
+}
+
+.vton-tabs .tabitem {
+  padding: 24px 0 0 !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+/* ---------- Karty ---------- */
+.vton-cards {
+  gap: 0 !important;
+  align-items: flex-start !important;
+  flex-wrap: nowrap !important;
+}
+
+.vton-card {
+  background: var(--vton-card) !important;
+  border: 1px solid var(--vton-border) !important;
+  border-radius: var(--vton-radius) !important;
+  box-shadow: var(--vton-shadow) !important;
+  padding: 16px !important;
+  gap: 12px !important;
+}
+
+.vton-card-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--vton-muted);
+}
+
+.vton-card .vton-image {
+  border-radius: 8px !important;
+  overflow: hidden;
+  background: var(--vton-bg) !important;
+}
+
+/* Upload plocha – pokojná, s jemným prerušovaným okrajom */
+.vton-card .vton-image .upload-container,
+.vton-card .vton-image button.center {
+  border: 1px dashed var(--vton-border) !important;
+  border-radius: 8px !important;
+}
+
+.vton-card .vton-image .wrap,
+.vton-card .vton-image .placeholder,
+.vton-card .vton-image .upload-container {
+  color: var(--vton-muted) !important;
+}
+
+.vton-card .vton-image img {
+  object-fit: contain;
+}
+
+.vton-mask {
+  box-shadow: none !important;
+}
+
+/* „+“ a „=“ medzi kartami */
+.vton-sep-col {
+  align-self: stretch !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  min-width: 40px !important;
+  flex: 0 0 40px !important;
+}
+
+.vton-sep-col > div,
+.vton-sep-col .html-container,
+.vton-sep-col .prose {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.vton-sep {
+  font-family: var(--font-heading);
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1;
+  color: #B9B2A8;
+  text-align: center;
+  user-select: none;
+}
+
+/* Pod výsledkom: Stiahnuť + čas */
+.vton-result-actions {
+  align-items: center !important;
+  gap: 12px !important;
+  flex-wrap: wrap !important;
+}
+
+.vton-download {
+  flex: 0 0 auto !important;
+  min-width: 120px !important;
+  max-width: 160px;
+}
+
+.vton-meta,
+.vton-meta p {
+  color: var(--vton-muted) !important;
+  font-size: 13px !important;
+  margin: 0 !important;
+}
+
+/* ---------- Ovládanie ---------- */
+.vton-controls {
+  align-items: center !important;
+  gap: 20px !important;
+  padding: 8px 0;
+  background: transparent !important;
+}
+
+/* Segmentové tlačidlá (gr.Radio) */
+.vton-segmented {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-wrap: wrap;
+  gap: 14px !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  width: auto !important;
+}
+
+.vton-segmented > span,
+.vton-segmented [data-testid="block-info"] {
+  margin: 0 !important;
+  font-size: 14px !important;
+  color: var(--vton-muted) !important;
+}
+
+.vton-segmented .wrap {
+  display: inline-flex !important;
+  flex-wrap: nowrap !important;
+  gap: 0 !important;
+  padding: 4px;
+  background: var(--vton-card);
+  border: 1px solid var(--vton-border);
+  border-radius: 999px;
+}
+
+.vton-segmented label {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 999px !important;
+  padding: 8px 18px !important;
+  margin: 0 !important;
+  color: var(--vton-muted) !important;
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color .15s, background-color .15s;
+}
+
+.vton-segmented label:hover {
+  color: var(--vton-text) !important;
+}
+
+.vton-segmented label.selected,
+.vton-segmented label:has(input:checked) {
+  background: var(--vton-accent-soft) !important;
+  color: var(--vton-text) !important;
+  box-shadow: inset 0 0 0 1px var(--vton-accent) !important;
+}
+
+.vton-segmented input[type="radio"] {
+  position: absolute !important;
+  opacity: 0 !important;
+  width: 1px !important;
+  height: 1px !important;
+  pointer-events: none;
+}
+
+.vton-segmented label > span {
+  margin: 0 !important;
+}
+
+/* Hlavné tlačidlo */
+.vton-submit {
+  width: min(320px, 100%) !important;
+  min-width: 200px !important;
+  flex: none !important;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  padding: 14px 28px !important;
+  transition: background-color .2s, border-color .2s;
+}
+
+.vton-submit:disabled,
+.vton-submit[disabled] {
+  background: #9A958E !important;
+  border-color: #9A958E !important;
+  cursor: progress;
+}
+
+/* ---------- Akordeóny ---------- */
+.vton-accordion {
+  background: var(--vton-card) !important;
+  border: 1px solid var(--vton-border) !important;
+  border-radius: var(--vton-radius) !important;
+  box-shadow: var(--vton-shadow) !important;
+}
+
+.vton-accordion > button,
+.vton-accordion .label-wrap {
+  font-size: 14px !important;
+  font-weight: 500;
+  color: var(--vton-text) !important;
+}
+
+.vton-hint,
+.vton-hint p {
+  color: var(--vton-muted) !important;
+  font-size: 13px !important;
+}
+
+/* ---------- O projekte ---------- */
+.vton-about {
+  max-width: 720px;
+  background: var(--vton-card);
+  border: 1px solid var(--vton-border);
+  border-radius: var(--vton-radius);
+  box-shadow: var(--vton-shadow);
+  padding: 32px;
+  line-height: 1.65;
+  color: var(--vton-text);
+}
+
+.vton-about h2,
+.vton-about h3 {
+  font-family: var(--font-heading);
+  font-weight: 500;
+  color: var(--vton-text);
+}
+
+.vton-about h2 {
+  font-size: 32px;
+  margin: 0 0 12px;
+}
+
+.vton-about h3 {
+  font-size: 22px;
+  margin: 24px 0 6px;
+}
+
+.vton-about p,
+.vton-about li {
+  color: var(--vton-text);
+  font-size: 15px;
+}
+
+.vton-about ol {
+  padding-left: 20px;
+  margin: 0;
+}
+
+.vton-about li::marker {
+  color: var(--vton-accent);
+}
+
+/* ---------- Mobil ---------- */
+@media (max-width: 900px) {
+  .vton-cards {
+    flex-direction: column !important;
+    flex-wrap: wrap !important;
+  }
+
+  .vton-cards > .vton-card {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .vton-sep-col {
+    flex: 0 0 auto !important;
+    min-height: 36px;
+    width: 100% !important;
+  }
+
+  .vton-sep {
+    font-size: 24px;
+  }
+
+  .vton-segmented {
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+
+  .vton-segmented .wrap {
+    max-width: 100%;
+  }
+
+  .vton-segmented label {
+    padding: 8px 12px !important;
+    font-size: 13px;
+  }
+
+  .vton-about {
+    padding: 20px;
+  }
+}
+
+/* Gradio obalí formulárové prvky do .form so šedým pozadím – tu ho netreba */
+.vton-controls .form,
+.vton-accordion .form {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  gap: 16px !important;
+}
+
+.vton-controls .vton-segmented {
+  padding: 0 !important;
+}
