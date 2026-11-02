@@ -1,0 +1,13 @@
+# Závislosti pre CatVTON backend (Kaggle GPU). Inštaluje ich kaggle/run.ipynb.
+# torch, torchvision, numpy, scipy, opencv, matplotlib sú na Kaggle predinštalované
+# – zámerne ich tu nepripíname, aby sa nerozbila CUDA verzia torchu.
+diffusers>=0.29
+transformers>=4.40
+accelerate>=0.31
+huggingface_hub>=0.34
+# detectron2 / DensePose (kód je priamo v repe CatVTON, treba len ich závislosti)
+fvcore
+omegaconf
+cloudpickle
+pycocotools
+av

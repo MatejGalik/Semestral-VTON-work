@@ -5,3 +5,6 @@ __pycache__/
 
 # CatVTON klon (len na čítanie kódu, necommitovať)
 CatVTON/
+
+# dočasné súbory DensePose (CatVTON)
+densepose_/
