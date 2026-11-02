@@ -68,8 +68,10 @@ from model.pipeline import CatVTONPipeline  # noqa: E402  (z CatVTON)
 from utils import repaint_result, resize_and_crop, resize_and_padding  # noqa: E402  (z CatVTON)
 
 _DEVICE = "cuda"
-# T4 / P100 na Kaggle nepodporujú bf16 → fp16.
-_DTYPE = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+# bf16 len na Ampere+ (compute capability >= 8). Pozor: torch.cuda.is_bf16_supported()
+# vracia True aj na T4 (emulácia), no vtedy SDPA nemá úsporný kernel a attention
+# spadne na "math" variant, ktorý chce ~36 GB VRAM. T4 / P100 na Kaggle → fp16.
+_DTYPE = torch.bfloat16 if torch.cuda.get_device_capability(0)[0] >= 8 else torch.float16
 _GPU_NAME = torch.cuda.get_device_name(0)
 
 _t0 = time.perf_counter()
