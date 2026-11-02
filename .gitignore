@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 .gradio/
+
+# CatVTON klon (len na čítanie kódu, necommitovať)
+CatVTON/
