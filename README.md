@@ -4,6 +4,12 @@ Semestrálny projekt: používateľ nahrá fotku osoby a fotku oblečenia a mode
 **CatVTON** vygeneruje fotku osoby v novom oblečení. UI je postavené na
 **Gradio 6** (`gr.Blocks`).
 
+## Dokumentácia
+
+- [docs/architektura.md](docs/architektura.md) – technológie, architektúra, UI, API, pracovný postup
+- [docs/backend.md](docs/backend.md) – backend s CatVTON, rozhodnutia, zistenia z testovania, plány
+- [docs/analyzy/](docs/analyzy/) – analýzy úloh pred implementáciou
+
 ## Požiadavky
 
 - Python **3.10+**
@@ -85,23 +91,44 @@ od ostatných projektov a celé sa dá zmazať cez `rm -rf .venv`.
 | `--host 0.0.0.0`| počúva na všetkých rozhraniach (napr. v Dockeri)        |
 | `--port 7861`   | iný port, ak je 7860 obsadený                           |
 
-## Spustenie na Kaggle
+## Spustenie na Kaggle (GPU)
 
-1. V notebooku zapni **Settings → Accelerator → GPU** a **Internet → On**
-   (bez internetu nevznikne verejný link).
-2. V bunke:
+Skutočné generovanie beží na Kaggle. Kód sa píše lokálne a pushuje na GitHub,
+notebook na Kaggle je len spúšťač, ktorý si vždy stiahne najnovšiu verziu.
 
-   ```bash
-   !git clone <URL-repozitára> vton
-   %cd vton
-   !pip install -q -r requirements.txt
-   !python app.py --share
-   ```
+**Raz na začiatku (každý člen tímu vo vlastnom Kaggle účte):**
 
-3. Vo výstupe bunky sa objaví `Running on public URL: https://….gradio.live`.
-   Tento link otvor v prehliadači.
+1. Založ si Kaggle účet a v nastaveniach **over telefónne číslo** (bez toho
+   nie je GPU ani internet). Spoločný účet netreba – každý má vlastnú GPU kvótu
+   (~30 h/týždeň).
+2. *Create → New Notebook → File → Import Notebook* → nahraj
+   [`kaggle/run.ipynb`](kaggle/run.ipynb).
+3. V *Settings* zapni **Accelerator: GPU T4 x2** (alebo P100) a **Internet: On**.
+4. Len pre súkromné repo: *Add-ons → Secrets* → `GITHUB_TOKEN`.
 
-Bunka beží, kým je aplikácia spustená. Zastavíš ju tlačidlom **Stop** (■).
+**Pri každej práci:** otvor notebook → **Run All** → počkaj na
+`https://….gradio.live` v poslednej bunke a otvor ho.
+
+Notebook: stiahne repo (vetva v bunke Nastavenia), naklonuje
+[CatVTON](https://github.com/Zheng-Chong/CatVTON), nainštaluje
+`requirements.txt` + `requirements-gpu.txt`, stiahne váhy a spustí
+`python app.py --share`.
+
+**Pracovný cyklus:** úprava kódu lokálne → `git push` → na Kaggle zastav
+poslednú bunku → **Run All**.
+
+**Poznámky**
+
+- Prvé spustenie sťahuje niekoľko GB váh a pár minút nič nevypisuje.
+- Hláška pip-u o konflikte `dopamine-rl` / `gym` je neškodná (predinštalované
+  balíky Kaggle).
+- „Draft session starting“ po obnovení stránky = Kaggle prideľuje stroj, zvyčajne
+  1–3 min. Ak to trvá dlho, zastav starú reláciu v *Active Events*.
+- Po skončení **zastav session** (vpravo hore), inak sa míňa GPU kvóta.
+- Disk `/kaggle/working` je dočasný – po skončení relácie sa vymaže.
+
+Ako funguje backend, prečo je spravený tak, ako je, a čo sme zistili pri
+testovaní: [docs/backend.md](docs/backend.md).
 
 ## Použitie
 
@@ -148,19 +175,30 @@ def try_on(person_img: PIL.Image, cloth_img: PIL.Image, cloth_type: str,
 ```
 
 Keď tento súbor existuje a dá sa importovať, DEMO režim sa automaticky vypne.
+Backend je implementovaný s CatVTON a vstavaným maskovaním (AutoMasker) –
+podrobnosti v [docs/backend.md](docs/backend.md).
 
 ## Štruktúra
 
 ```
-app.py            # spustenie, adaptér run_tryon(), skladanie tabov
-config.py         # FEATURES, texty UI, farby, predvolené hodnoty
-ui/theme.py       # Gradio téma (farby, písma)
-ui/styles.css     # štýly komponentov (karty, „+“ a „=“, segmentové tlačidlá)
-ui/page.css       # globálne štýly stránky (vkladané do <head>)
-ui/tabs.py        # build_tryon_tab(), build_about_tab(), budúce taby
-assets/examples/  # ukážkové osoby a produkty
-src/              # backend (model) – mimo UI
+app.py                # spustenie, adaptér run_tryon(), skladanie tabov
+config.py             # FEATURES, texty UI, farby, predvolené hodnoty
+ui/theme.py           # Gradio téma (farby, písma)
+ui/styles.css         # štýly komponentov (karty, „+“ a „=“, segmentové tlačidlá)
+ui/page.css           # globálne štýly stránky (vkladané do <head>)
+ui/tabs.py            # build_tryon_tab(), build_about_tab(), budúce taby
+assets/examples/      # ukážkové osoby a produkty
+src/try_on.py         # backend: CatVTON + AutoMasker (potrebuje GPU)
+requirements.txt      # závislosti UI (stačia lokálne)
+requirements-gpu.txt  # závislosti backendu (Kaggle)
+kaggle/run.ipynb      # spúšťač na Kaggle
+docs/backend.md       # dokumentácia backendu a zistenia z testovania
+docs/analyzy/         # analýzy úloh pred implementáciou
+.claude/agents/       # subagent „analytik“ pre Claude Code
 ```
+
+Kód CatVTON nie je súčasťou repa – na Kaggle sa klonuje za behu, lokálne si ho
+môžeš naklonovať do `CatVTON/` (je v `.gitignore`) len na čítanie kódu.
 
 ### Budúce funkcie
 
