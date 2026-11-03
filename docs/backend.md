@@ -12,11 +12,13 @@ UI (app.py, run_tryon)
 src/try_on.py: try_on()
    1. predspracovanie   – osoba: výrez 3:4 + zmena na 768×1024
                           oblečenie: doplnenie bielym okrajom na 768×1024
-   2. maska             – AutoMasker (DensePose + SCHP) podľa cloth_type
-                          + rozmazanie okraja (blur 9)
-   3. generovanie       – CatVTONPipeline (SD 1.5 inpainting + attention váhy)
-   4. paste_face        – mimo masky vráti pôvodné pixely (tvár, ruky, pozadie)
-   5. späť do pôvodného rozmeru fotky
+   2. dĺžka rukáva      – CLIP z fotky oblečenia (len upper / overall)
+   3. maska             – AutoMasker (DensePose + SCHP) podľa cloth_type
+   4. ochrana rúk       – z masky vyreže dlane, pri krátkom rukáve aj holé ruky
+                          (len upper / overall), potom rozmazanie okraja (blur 9)
+   5. generovanie       – CatVTONPipeline (SD 1.5 inpainting + attention váhy)
+   6. paste_face        – mimo masky vráti pôvodné pixely (tvár, ruky, pozadie)
+   7. späť do pôvodného rozmeru fotky
    ▼
 {"result": PIL.Image, "mask": PIL.Image, "info": dict}
 ```
@@ -35,9 +37,12 @@ try_on(person_img, cloth_img, cloth_type, **options) -> dict
 | `seed` | `int` (predvolene 42) | rovnaký seed = rovnaký výsledok |
 | `paste_face` | `bool` (predvolene `True`) | vrátiť pôvodné pixely mimo masky |
 | `guidance_scale` | `float` (predvolene 2.5) | voliteľné, UI ho zatiaľ neposiela |
+| `sleeves` | `"auto"` \| `"short"` \| `"long"` \| `"sleeveless"` | voliteľné, ručné určenie rukávov namiesto CLIP (na testovanie); UI ho neposiela |
 
-Návrat: `result` (výsledok v pôvodnom rozmere fotky), `mask` (maska v pôvodnom
-rozmere), `info` (model, kroky, seed, rozlíšenie, GPU, čas v sekundách).
+Návrat: `result` (výsledok v pôvodnom rozmere fotky), `mask` (upravená maska
+v pôvodnom rozmere), `info` (model, kroky, seed, rozlíšenie, GPU, čas, rukávy,
+chránené časti). `info` UI nezobrazuje – vypisuje sa do konzoly ako
+`try_on: {...}` (na Kaggle vo výstupe poslednej bunky).
 
 API endpoint `/try_on` v `app.py` sa týmto nemení – rozšírenie do prehliadača
 funguje ďalej.
@@ -57,6 +62,8 @@ Model sa načíta **raz pri importe** modulu, nie pri každom volaní:
    `booksforcharlie/stable-diffusion-inpainting` (pôvodný `runwayml` repozitár
    bol zmazaný; rovnakú kópiu používa oficiálne demo CatVTON).
 5. `AutoMasker` s váhami DensePose a SCHP.
+6. CLIP (`openai/clip-vit-base-patch32`, fp16) na určenie dĺžky rukáva. Ak sa
+   nenačíta, backend beží ďalej a chráni len dlane (varovanie v konzole).
 
 Prvé spustenie sťahuje niekoľko GB váh a dlho nič nevypisuje – nie je
 zaseknuté. Po načítaní sa vypíše `CatVTON pripravený za … s (GPU, dtype)`.
@@ -71,6 +78,7 @@ zaseknuté. Po načítaní sa vypíše `CatVTON pripravený za … s (GPU, dtype
 | **fp16 na T4/P100**, bf16 len pri compute capability ≥ 8 | pozri „OOM na T4“ nižšie |
 | `paste_face` = `repaint_result` z CatVTON | jednoduché a funkčné: tvár a pozadie zostanú ostré a pôvodné |
 | Výsledok sa vracia v pôvodnom rozmere fotky | sedí s UI; vygenerovaný výrez sa vloží späť do originálu |
+| Ochrana rúk podľa rukáva nového oblečenia (CLIP), nie podľa fotky osoby | chráni sa len holá koža podľa SCHP, takže stačí poznať nové oblečenie; pozri „Ochrana rúk“ |
 | Torch sa v `requirements-gpu.txt` nepripína | Kaggle má torch s CUDA predinštalovaný, preinštalovanie by ho rozbilo |
 
 ## Závislosti
@@ -113,15 +121,74 @@ vložení späť do veľkej fotky (napr. 3000×4000) sa zväčšuje. Pri zapnuto
 `paste_face` je okolie ostrý originál, takže rozdiel je viditeľný. Zatiaľ
 neriešené.
 
+## Ochrana rúk podľa dĺžky rukáva
+
+_Stav: **implementované 2026-11-03, čaká na test na Kaggle.**_
+
+**Problém.** Maska pre `upper` zakrýva trup aj celé ruky. Pri prekrížených
+rukách (ruky ležia na hrudi) ich model musí nakresliť nanovo a vzniká rozmazaný
+chaos.
+
+**Riešenie.** Z masky AutoMaskera sa vyrežú časti, ktoré sa meniť nemajú,
+a `paste_face` ich vráti z pôvodnej fotky:
+
+- **dlane – vždy**: DensePose (triedy 3, 4) ∩ koža rúk podľa SCHP. AutoMasker
+  dlane chráni aj sám, no jeho záverečné roztiahnutie masky do nich zasahuje –
+  tu sa vyrežú až po ňom.
+- **holá koža rúk – len ak nové oblečenie má krátky rukáv alebo je bez rukávov**:
+  SCHP LIP aj ATR (triedy 14, 15 = Left-arm, Right-arm).
+
+Netreba zisťovať, aký rukáv má osoba na fotke: chráni sa len holá koža. Ak má
+osoba dlhý rukáv, holej kože je málo a rukáv sa prekreslí ako doteraz.
+Chránená oblasť sa roztiahne o 2 iterácie (jadro 5×5), aby do nej nezasahoval
+rozmazaný okraj masky.
+
+**Dĺžka rukáva – CLIP (zero-shot).** `openai/clip-vit-base-patch32` (~600 MB)
+porovná fotku oblečenia s textami pre `short` / `long` / `sleeveless`
+(`SLEEVE_PROMPTS` v `src/try_on.py`) a vráti najpodobnejší s istotou. Pri
+istote < 0,6 (`SLEEVE_MIN_CONFIDENCE`) sa holé ruky nechránia, dlane áno.
+Voľba `sleeves="short"` atď. obíde CLIP (na testovanie).
+
+**Kedy čo beží** (`try_on()`):
+
+```
+pri štarte:   CatVTON + AutoMasker + CLIP sa načítajú raz do GPU
+pri volaní:
+1. predspracovanie       osoba a oblečenie → 768×1024
+2. CLIP                  fotka oblečenia → krátky / dlhý / bez      ~0,05 s
+3. AutoMasker            fotka osoby → maska + DensePose + SCHP
+4. ochrana rúk           maska − dlane − (holé ruky, ak krátky rukáv), potom blur
+5. CatVTON               osoba + oblečenie + upravená maska         najdlhší krok
+6. paste_face            mimo masky vráti originál → ruky pôvodné
+7. späť do pôvodnej veľkosti
+```
+
+- Kroky 2 a 3 sú nezávislé, spája ich až krok 4.
+- Pri `lower` sa kroky 2 a 4 preskočia – maska pre spodok ruky nezahŕňa.
+- Masky DensePose a SCHP vracia AutoMasker (`densepose`, `schp_lip`,
+  `schp_atr`), nič sa nepočíta navyše okrem CLIP.
+
+**Výstup.** V `info` (konzola): `"sleeves": "short (0.87)"`,
+`"sleeves_source": "clip"`, `"protected": "dlane, ruky"`. UI zobrazí upravenú
+masku (prepínač „zobraziť masku“). UI ani API `/try_on` sa nemení.
+
+**Overenie (treba spraviť).** ~10 fotiek (spredu, prekrížené ruky, ruky za
+chrbtom) × krátky a dlhý rukáv, porovnanie pred / po s rovnakým seedom.
+Vhodné na obhajobu a pre tab `compare_masks` (flag v `config.FEATURES`).
+
+**Riziká.**
+
+- CLIP sa pomýli pri zložených / pokrčených kúskoch → istota v `info`, neskôr
+  ručný prepínač v UI.
+- SCHP zle označí kožu (napr. tričko v telovej farbe).
+- Dlhý rukáv + prekrížené ruky: pomôže sa len dlaniam, rukávy model kreslí sám.
+- Náklady: ~600 MB VRAM navyše, zlomok sekundy na volanie.
+
 ## Plánované vylepšenia
 
-1. **Ochrana rúk v maske podľa dĺžky rukáva (ďalší krok).** CLIP (zero-shot)
-   z fotky oblečenia určí krátky / dlhý rukáv / bez rukávov. Dlane (DensePose)
-   sa chránia vždy; holé ruky (SCHP) sa chránia, keď nové oblečenie má krátky
-   rukáv alebo je bez rukávov a osoba má holé ruky. Rozhodnutie a istota sa
-   zapíšu do `info`. UI ani API sa nemení. Cieľ: lepšie výsledky pri
-   prekrížených rukách.
-2. Ručná úprava masky v UI (štetec) – CatVTON vlastnú masku podporuje.
-3. Riešenie rozmazania pri veľkých fotkách (nezväčšovať výsledok / voľba
+1. Otestovať ochranu rúk na Kaggle a výsledky zapísať do Zistení.
+2. Ručný prepínač rukávov (auto / krátke / dlhé) v UI, ak sa CLIP často mýli.
+3. Ručná úprava masky v UI (štetec) – CatVTON vlastnú masku podporuje.
+4. Riešenie rozmazania pri veľkých fotkách (nezväčšovať výsledok / voľba
    „vrátiť v rozlíšení modelu“).
-4. Porovnanie s iným modelom (IDM-VTON) – flag `compare_models` v `config.py`.
+5. Porovnanie s iným modelom (IDM-VTON) – flag `compare_models` v `config.py`.

@@ -34,6 +34,7 @@ dokumentáciu (a commitni ju spolu so zmenou):
 | spúšťanie, inštalácia, Kaggle notebook, prepínače | `README.md` (+ `docs/architektura.md` ak treba) |
 | nové zistenie z testovania (kvalita, chyba, výkon) | `docs/backend.md` – „Zistenia z testovania“ |
 | splnený / nový plán | `docs/backend.md` – „Plánované vylepšenia“ |
+| návrh dohodnutý v konverzácii (ešte neimplementovaný) | zapísať ako sekciu „Návrh: …“ so stavom *návrh*; pri implementácii priebežne upravovať podľa skutočnosti, po dokončení presunúť do opisu a zmazať stav *návrh* |
 
 Aktualizuj aj dátum „Stav k …“ v upravenom dokumente. Ak zmena dokumentáciu
 neovplyvňuje, výslovne to povedz.

@@ -19,6 +19,7 @@ UI alebo cez API (pre rozšírenie do prehliadača).
 | Obrázky | Pillow | načítanie, orezanie, maska v DEMO režime |
 | Model | **CatVTON** (`mix-48k-1024`) | virtuálne skúšanie – difúzny model na báze Stable Diffusion 1.5 inpainting |
 | Maskovanie | AutoMasker z CatVTON: **DensePose** (detectron2) + **SCHP** | automatická maska oblasti, ktorá sa prekreslí |
+| Rukávy | **CLIP** (`openai/clip-vit-base-patch32`, zero-shot) | z fotky oblečenia určí krátky / dlhý / bez rukávov → ochrana rúk v maske |
 | ML knižnice | PyTorch, diffusers, transformers, accelerate | beh modelu na GPU (fp16) |
 | Váhy | Hugging Face Hub (`huggingface_hub`) | sťahovanie váh CatVTON a SD inpainting |
 | GPU | **Kaggle Notebooks** (T4 16 GB / P100) | skutočné generovanie; lokálne PC nemá GPU |
@@ -45,7 +46,7 @@ UI alebo cez API (pre rozšírenie do prehliadača).
                ▼
 ┌─────────────────────────────┐   ┌─────────────────────────────┐
 │ src/try_on.py (GPU)          │   │ _stub_try_on (DEMO, bez GPU) │
-│ CatVTON + AutoMasker         │   │ fotka s nápisom + hrubá maska│
+│ CatVTON + AutoMasker + CLIP  │   │ fotka s nápisom + hrubá maska│
 └─────────────────────────────┘   └─────────────────────────────┘
 ```
 
