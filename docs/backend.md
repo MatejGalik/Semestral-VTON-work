@@ -144,6 +144,15 @@ nového trička a hlavne okolo rúk je svetlý lem. Maska (`show_mask`) končí
 vodorovnou čiarou ~6 % nad spodkom fotky a pod rukami pokrýva len úzky pás.
 Pozri „Oprava masky Sapiens (spodok, lem)“.
 
+**Prekrížené ruky nefungujú ani po oprave masky (2026-11-06) – vypustené
+z plánu.** Ani Sapiens s opravou spodku a lemu nedal použiteľný výsledok.
+Projekt počíta s fotkou osoby s rukami pri tele (podmienka na vstup).
+
+**Dlhý rukáv → krátky: ostávajú konce dlhého rukáva (2026-11-06, Sapiens).**
+Po poslednej oprave masky Sapiens (prah 127, menšie roztiahnutie) zostávajú
+pri zápästiach viditeľné konce pôvodného dlhého rukáva. Analýza a riešenia:
+„Riešenie: konce dlhého rukáva“.
+
 **Možné rozmazanie pri veľkých fotkách.** Výsledok vzniká v 768×1024 a pri
 vložení späť do veľkej fotky (napr. 3000×4000) sa zväčšuje. Pri zapnutom
 `paste_face` je okolie ostrý originál, takže rozdiel je viditeľný. Zatiaľ
@@ -291,11 +300,11 @@ zistením „Sapiens: odrezaný spodok trička a biely lem“.
    v `protected` poznámka „spodok maskovaný“. Nohy samotné nestačia – pri
    dlhých nohaviciach Sapiens holé nohy nevidí, preto sa rátajú aj topánky.
    Riziko: fotka do pása s viditeľným pásom nohavíc → pás sa prekreslí.
-2. **Ochrana rúk** sa pri Sapiens rozťahuje o 1 iteráciu
-   (`SAPIENS_PROTECT_DILATE`, pri SCHP ostáva 2).
-3. **Rozširovanie masky:** prah po Gaussovom rozmazaní 127
-   (`SAPIENS_BLUR_THRESHOLD`) namiesto 25 ako v AutoMaskeri – maska tesnejšie
-   kopíruje obrys postavy.
+2. ~~Ochrana rúk o 1 iteráciu~~ a 3. ~~prah po rozmazaní 127~~ – **vrátené
+   späť** na 2 iterácie a prah 25 (ako AutoMasker), pozri „Riešenie: konce
+   dlhého rukáva“. Tesná maska spôsobila, že model kreslil tričko a ruky užšie
+   a konce pôvodného dlhého rukáva ostali mimo masky. Konštanty
+   `SAPIENS_PROTECT_DILATE`, `SAPIENS_BLUR_THRESHOLD` ostávajú na ladenie.
 4. **Diagnostika:** `info["sapiens_classes"]` = podiel tried na fotke
    (`upper_clothing`, `lower_clothing`, `apparel`, `torso`, `arms`, `hands`,
    `legs`, `face`, `background`) – overí hypotézu 1 aj „prázdnu masku“.
@@ -303,6 +312,39 @@ zistením „Sapiens: odrezaný spodok trička a biely lem“.
 **Overenie (Kaggle):** tá istá fotka, seed 38 – spodok trička musí byť
 v maske a nový; lem okolo rúk menší. Kontrola na fotke s viditeľnými
 nohavicami, že sa nohavice nezmenia.
+
+## Riešenie: konce dlhého rukáva
+
+_Stav: **implementované riešenie B-lite 2026-11-06, čaká na test na Kaggle.**_
+Ak nepomôže → riešenie A (predvolene `schp`).
+
+**Pozorovanie:** výsledné tričko aj ruky sú prekreslené, ale „stiahnuté
+k stredu“ – užšie ako pôvodná postava; pri okraji ostávajú konce dlhého
+rukáva. Seed to nespôsobuje (maska od seedu nezávisí).
+
+**Prečo vznikajú (hypotézy, overiť maskou a `sapiens_classes`):**
+
+1. Pri krátkom novom rukáve sa chránia triedy rúk Sapiens (`S_ARMS`) a dlane
+   (+ roztiahnutie). Manžeta pri zápästí sa v Sapiens ľahko označí ako
+   predlaktie/dlaň → je chránená → `paste_face` vráti pôvodný rukáv.
+2. Prah 127 po rozmazaní a 1 iterácia roztiahnutia → maska tesne kopíruje
+   rukáv a jeho okraj ostane mimo masky.
+3. SCHP verzia maskuje celú ruku podľa DensePose (roztiahnutú) a chráni len
+   kožu podľa SCHP – rukáv je v maske celý, preto tam problém nebol.
+
+**Riešenia:**
+
+| # | Riešenie | Náročnosť |
+|---|---|---|
+| A | Vrátiť predvolený masker na `schp` (verzia pred Sapiens); Sapiens ponechať len ako voľbu / na porovnanie | malá – zmena predvolenej hodnoty v kóde a notebooku |
+| B | Opraviť Sapiens: pri krátkom rukáve pridať do masky roztiahnuté `Upper_Clothing` aj cez okraj chránených rúk (okrem samotných dlaní); prah späť na 25 v okolí rúk | stredná, treba ďalší test |
+| C | Úplne odstrániť Sapiens (kód, váhy, prepínače) | malá, stratí sa porovnanie |
+
+| B-lite | **zvolené:** vrátiť prah po rozmazaní na 25 a roztiahnutie ochrany rúk na 2 (ako AutoMasker); oprava `Lower_Clothing` ostáva | veľmi malá |
+
+Pôvodné odporúčanie bolo A (bez prekrížených rúk Sapiens nemá jasnú výhodu,
+~2,4 GB VRAM). Najprv sa skúša B-lite; overenie: tá istá fotka, dlhý → krátky
+rukáv, `COMPARE_MASKS = True`.
 
 ## Plánované vylepšenia
 

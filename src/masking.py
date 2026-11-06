@@ -22,8 +22,8 @@ from PIL import Image
 log = logging.getLogger(__name__)
 
 PROTECT_DILATE = 2                    # roztiahnutie chránenej oblasti rúk (iterácie) – SCHP
-SAPIENS_PROTECT_DILATE = 1            # pri Sapiens menej – inak pri rukách ostáva pás masky (lem)
-SAPIENS_BLUR_THRESHOLD = 127          # prah po rozmazaní (AutoMasker: 25 → maska širšia ako postava)
+SAPIENS_PROTECT_DILATE = 2            # ako SCHP; 1 → maska príliš tesná (konce dlhého rukáva)
+SAPIENS_BLUR_THRESHOLD = 25           # ako AutoMasker – široká maska dáva modelu priestor na iný strih
 LEGS_MIN_RATIO = 0.005                # nohy na fotke (podiel) → Lower_Clothing sú naozaj nohavice
 
 # --------------------------------------------------------------------------- #
