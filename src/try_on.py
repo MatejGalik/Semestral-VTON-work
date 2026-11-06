@@ -8,10 +8,16 @@ Kontrakt (používa ho app.py a API /try_on):
     options               : steps (int), seed (int), paste_face (bool),
                             guidance_scale (float, voliteľné),
                             sleeves ("auto" | "short" | "long" | "sleeveless",
-                            voliteľné – ručné určenie rukávov namiesto CLIP)
+                            voliteľné – ručné určenie rukávov namiesto CLIP),
+                            masker ("sapiens" | "schp", voliteľné),
+                            compare_masks (bool, voliteľné – uloží obe masky)
 
-Ochrana rúk: dlane sa z masky vyrežú vždy, holá koža rúk vtedy, keď nové
-oblečenie má krátky rukáv alebo je bez rukávov (určí CLIP z fotky oblečenia).
+Maska: predvolene Sapiens-seg (src/masking.py), záložne AutoMasker z CatVTON
+(DensePose + SCHP). Ochrana rúk: dlane sa z masky vyrežú vždy, holá koža rúk
+vtedy, keď nové oblečenie má krátky rukáv alebo je bez rukávov (určí CLIP).
+
+Premenné prostredia: VTON_MASKER (sapiens | schp), SAPIENS_SIZE (0.3b | 0.6b |
+1b), VTON_COMPARE_MASKS=1 (porovnanie pri každom volaní), VTON_MASK_DIR.
 
 Model sa načíta raz pri importe. Bez CUDA import zlyhá a app.py sa prepne
 do DEMO režimu. Kód CatVTON nie je v repe – očakáva sa naklonovaný v adresári
@@ -26,8 +32,6 @@ import sys
 import time
 from pathlib import Path
 
-import cv2
-import numpy as np
 import torch
 from PIL import Image
 
@@ -51,10 +55,13 @@ SLEEVE_PROMPTS = {                            # trieda → popis pre CLIP (zero-
     "sleeveless": "a product photo of a sleeveless top, tank top or strapless dress",
 }
 SLEEVE_MIN_CONFIDENCE = 0.6                   # pod touto istotou sa ruky nechránia
-PROTECT_DILATE = 2                            # roztiahnutie chránenej oblasti (iterácie)
-# Indexy tried (rovnaké ako v CatVTON model/cloth_masker.py)
-DENSEPOSE_HANDS = (3, 4)
-SCHP_ARMS = (14, 15)                          # Left-arm, Right-arm – v LIP aj ATR
+
+# Maska
+MASKERS = ("sapiens", "schp")
+DEFAULT_MASKER = os.environ.get("VTON_MASKER", "sapiens")
+SAPIENS_SIZE = os.environ.get("SAPIENS_SIZE", "0.6b")
+COMPARE_MASKS = os.environ.get("VTON_COMPARE_MASKS", "") == "1"
+MASK_DIR = os.environ.get("VTON_MASK_DIR", "/kaggle/working/masks")
 
 
 def _find_catvton_dir() -> Path:
@@ -86,6 +93,8 @@ from huggingface_hub import snapshot_download  # noqa: E402
 from model.cloth_masker import AutoMasker  # noqa: E402  (z CatVTON)
 from model.pipeline import CatVTONPipeline  # noqa: E402  (z CatVTON)
 from utils import repaint_result, resize_and_crop, resize_and_padding  # noqa: E402  (z CatVTON)
+
+from . import masking  # noqa: E402
 
 _DEVICE = "cuda"
 # bf16 len na Ampere+ (compute capability >= 8). Pozor: torch.cuda.is_bf16_supported()
@@ -129,6 +138,15 @@ except Exception as exc:  # noqa: BLE001
     log.warning("CLIP sa nepodarilo načítať, ruky sa nebudú chrániť podľa rukávov: %s", exc)
     _clip_model = _clip_processor = None
 
+# Sapiens-seg na masku (len ak je zvolený alebo sa porovnáva – šetrí VRAM).
+# Ak sa nenačíta (váhy, pamäť), použije sa AutoMasker.
+_sapiens = None
+if DEFAULT_MASKER == "sapiens" or COMPARE_MASKS:
+    try:
+        _sapiens = masking.load_sapiens(SAPIENS_SIZE, _DEVICE)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Sapiens sa nepodarilo načítať, maska bude z AutoMaskera (SCHP): %s", exc)
+
 log.info("CatVTON pripravený za %.1f s (%s, %s)", time.perf_counter() - _t0, _GPU_NAME, _DTYPE)
 
 
@@ -166,33 +184,15 @@ def _detect_sleeves(cloth: Image.Image) -> tuple[str | None, float]:
     return labels[best], float(probs[best])
 
 
-def _as_array(img: Image.Image, size: tuple[int, int]) -> np.ndarray:
-    """Mapu tried (DensePose/SCHP) zjednotí na rozmer masky – bez interpolácie tried."""
-    if img.size != size:
-        img = img.resize(size, Image.NEAREST)
-    return np.array(img)
-
-
-def _protect_mask(mask: Image.Image, parts: dict, protect_arms: bool) -> tuple[Image.Image, list[str]]:
-    """Z masky vyreže dlane (vždy) a holú kožu rúk (ak protect_arms)."""
-    size = mask.size
-    densepose = _as_array(parts["densepose"], size)
-    skin = np.isin(_as_array(parts["schp_lip"], size), SCHP_ARMS) | np.isin(
-        _as_array(parts["schp_atr"], size), SCHP_ARMS
-    )
-
-    kernel = np.ones((max(size) // 250 | 1,) * 2, np.uint8)  # rovnaká veľkosť ako v AutoMaskeri
-    hands = cv2.dilate(np.isin(densepose, DENSEPOSE_HANDS).astype(np.uint8), kernel) > 0
-    protect = hands & skin
-    protected = ["dlane"]
-    if protect_arms:
-        protect |= skin
-        protected.append("ruky")
-
-    # Mierne roztiahnuť, aby rozmazaný okraj masky nezasahoval do chránenej oblasti.
-    protect = cv2.dilate(protect.astype(np.uint8), kernel, iterations=PROTECT_DILATE) > 0
-    m = np.array(mask.convert("L")) > 127
-    return Image.fromarray(((m & ~protect) * 255).astype(np.uint8)), protected
+def _build_mask(person_r: Image.Image, cloth_type: str, protect_arms: bool, masker: str):
+    """Maska zvoleným maskerom (bez rozmazania). Vráti (maska, chránené časti)."""
+    if masker == "sapiens":
+        parse = masking.sapiens_parse(_sapiens, person_r, _DEVICE)
+        return masking.sapiens_mask(parse, cloth_type, protect_arms)
+    out = _automasker(person_r, cloth_type)
+    if cloth_type in ("upper", "overall"):
+        return masking.protect_schp(out["mask"], out, protect_arms)
+    return out["mask"], []
 
 
 # --------------------------------------------------------------------------- #
@@ -225,15 +225,29 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
         else:
             sleeves, confidence = _detect_sleeves(cloth_r)
 
-    # 2) Maska – vstavaný AutoMasker (DensePose + SCHP)
-    masker_out = _automasker(person_r, cloth_type)
-    mask = masker_out["mask"]
+    # 2) Maska + ochrana rúk (dlane vždy, holá koža pri krátkom rukáve / bez rukávov)
+    protect_arms = sleeves in ("short", "sleeveless") and confidence >= SLEEVE_MIN_CONFIDENCE
+    masker = options.get("masker", DEFAULT_MASKER)
+    if masker not in MASKERS:
+        raise ValueError(f"Neznámy masker: {masker!r}")
+    if masker == "sapiens" and _sapiens is None:
+        masker = "schp"                                      # záloha
+    mask_started = time.perf_counter()
+    mask, protected = _build_mask(person_r, cloth_type, protect_arms, masker)
+    mask_seconds = time.perf_counter() - mask_started
 
-    # 3) Ochrana rúk: dlane vždy, holá koža pri krátkom rukáve / bez rukávov
-    protected = []
-    if cloth_type in ("upper", "overall"):
-        protect_arms = sleeves in ("short", "sleeveless") and confidence >= SLEEVE_MIN_CONFIDENCE
-        mask, protected = _protect_mask(mask, masker_out, protect_arms)
+    # 3) Voliteľné porovnanie maskerov (PNG do MASK_DIR, podiel pixelov do info)
+    compare = {}
+    if options.get("compare_masks", COMPARE_MASKS) and _sapiens is not None:
+        other = "schp" if masker == "sapiens" else "sapiens"
+        masks = {masker: mask, other: _build_mask(person_r, cloth_type, protect_arms, other)[0]}
+        compare = {f"mask_ratio_{k}": masking.mask_ratio(v) for k, v in masks.items()}
+        try:
+            name = time.strftime("%Y%m%d-%H%M%S") + f"_{cloth_type}"
+            compare["compare_file"] = masking.save_comparison(person_r, masks, MASK_DIR, name)
+        except OSError as exc:
+            log.warning("Porovnanie masiek sa nepodarilo uložiť: %s", exc)
+
     mask_soft = _mask_processor.blur(mask, blur_factor=MASK_BLUR)
 
     # 4) Generovanie
@@ -266,6 +280,9 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
         "sleeves": f"{sleeves} ({confidence:.2f})" if sleeves else "-",
         "sleeves_source": "manual" if sleeves_opt in SLEEVE_PROMPTS else "clip",
         "protected": ", ".join(protected) or "-",
+        "masker": f"sapiens-{SAPIENS_SIZE}" if masker == "sapiens" else "schp",
+        "mask_seconds": round(mask_seconds, 2),
+        **compare,
         "resolution": f"{WIDTH}x{HEIGHT}",
         "device": f"{_GPU_NAME} ({str(_DTYPE).replace('torch.', '')})",
         "seconds": round(time.perf_counter() - started, 1),

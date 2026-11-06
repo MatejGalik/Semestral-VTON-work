@@ -1,6 +1,6 @@
 # Architektúra a technológie
 
-Stav k 2026-11-03. Celkový pohľad na projekt: z čoho sa skladá, aké technológie
+Stav k 2026-11-06. Celkový pohľad na projekt: z čoho sa skladá, aké technológie
 používa, ako sa spúšťa a ako sa na ňom pracuje. Podrobnosti o modeli sú
 v [backend.md](backend.md).
 
@@ -18,7 +18,7 @@ UI alebo cez API (pre rozšírenie do prehliadača).
 | UI | **Gradio 6** (`gr.Blocks`) | webové rozhranie, API endpoint, verejný link (`--share`) |
 | Obrázky | Pillow | načítanie, orezanie, maska v DEMO režime |
 | Model | **CatVTON** (`mix-48k-1024`) | virtuálne skúšanie – difúzny model na báze Stable Diffusion 1.5 inpainting |
-| Maskovanie | AutoMasker z CatVTON: **DensePose** (detectron2) + **SCHP** | automatická maska oblasti, ktorá sa prekreslí |
+| Maskovanie | **Sapiens-seg** (Meta, predvolene); záložne AutoMasker z CatVTON: **DensePose** (detectron2) + **SCHP** | automatická maska oblasti, ktorá sa prekreslí |
 | Rukávy | **CLIP** (`openai/clip-vit-base-patch32`, zero-shot) | z fotky oblečenia určí krátky / dlhý / bez rukávov → ochrana rúk v maske |
 | ML knižnice | PyTorch, diffusers, transformers, accelerate | beh modelu na GPU (fp16) |
 | Váhy | Hugging Face Hub (`huggingface_hub`) | sťahovanie váh CatVTON a SD inpainting |
@@ -46,7 +46,7 @@ UI alebo cez API (pre rozšírenie do prehliadača).
                ▼
 ┌─────────────────────────────┐   ┌─────────────────────────────┐
 │ src/try_on.py (GPU)          │   │ _stub_try_on (DEMO, bez GPU) │
-│ CatVTON + AutoMasker + CLIP  │   │ fotka s nápisom + hrubá maska│
+│ CatVTON + maska + CLIP       │   │ fotka s nápisom + hrubá maska│
 └─────────────────────────────┘   └─────────────────────────────┘
 ```
 
@@ -63,6 +63,7 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
 | `ui/theme.py` | Gradio téma, CSS premenné z `config.COLORS`, `<head>` s písmami, vynútenie svetlého režimu |
 | `ui/styles.css`, `ui/page.css` | vzhľad komponentov a stránky |
 | `src/try_on.py` | backend s CatVTON ([backend.md](backend.md)) |
+| `src/masking.py` | generovanie masky: Sapiens-seg / AutoMasker + ochrana rúk, porovnanie masiek |
 | `assets/examples/` | ukážkové osoby (`person_*.png`) a oblečenie (`cloth_*.png`) |
 | `kaggle/run.ipynb` | spúšťač na Kaggle |
 | `requirements.txt` / `requirements-gpu.txt` | závislosti UI / backendu |

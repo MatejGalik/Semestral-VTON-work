@@ -114,6 +114,14 @@ Notebook: stiahne repo (vetva v bunke Nastavenia), naklonuje
 `requirements.txt` + `requirements-gpu.txt`, stiahne váhy a spustí
 `python app.py --share`.
 
+V bunke Nastavenia sa dá zvoliť maska:
+
+| Premenná | Význam |
+|---|---|
+| `MASKER` | `"sapiens"` (predvolene, presnejšie pri zlých pózach) alebo `"schp"` (AutoMasker z CatVTON) |
+| `SAPIENS_SIZE` | `"0.3b"` / `"0.6b"` / `"1b"` – väčší = presnejší, viac VRAM |
+| `COMPARE_MASKS` | `True` = pri každom generovaní uloží obe masky vedľa seba do `/kaggle/working/masks` |
+
 **Pracovný cyklus:** úprava kódu lokálne → `git push` → na Kaggle zastav
 poslednú bunku → **Run All**.
 
@@ -188,7 +196,8 @@ ui/styles.css         # štýly komponentov (karty, „+“ a „=“, segmentov
 ui/page.css           # globálne štýly stránky (vkladané do <head>)
 ui/tabs.py            # build_tryon_tab(), build_about_tab(), budúce taby
 assets/examples/      # ukážkové osoby a produkty
-src/try_on.py         # backend: CatVTON + AutoMasker (potrebuje GPU)
+src/try_on.py         # backend: CatVTON (potrebuje GPU)
+src/masking.py        # maska: Sapiens-seg / AutoMasker + ochrana rúk
 requirements.txt      # závislosti UI (stačia lokálne)
 requirements-gpu.txt  # závislosti backendu (Kaggle)
 kaggle/run.ipynb      # spúšťač na Kaggle

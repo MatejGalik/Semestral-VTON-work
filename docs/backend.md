@@ -1,6 +1,6 @@
 # Backend – CatVTON (`src/try_on.py`)
 
-Stav k 2026-11-03. Popisuje, ako funguje generovanie, prečo je spravené tak,
+Stav k 2026-11-06. Popisuje, ako funguje generovanie, prečo je spravené tak,
 ako je, a čo sme zistili pri testovaní.
 
 ## Prehľad
@@ -13,7 +13,8 @@ src/try_on.py: try_on()
    1. predspracovanie   – osoba: výrez 3:4 + zmena na 768×1024
                           oblečenie: doplnenie bielym okrajom na 768×1024
    2. dĺžka rukáva      – CLIP z fotky oblečenia (len upper / overall)
-   3. maska             – AutoMasker (DensePose + SCHP) podľa cloth_type
+   3. maska             – src/masking.py: Sapiens-seg (predvolene) alebo
+                          AutoMasker (DensePose + SCHP) podľa cloth_type
    4. ochrana rúk       – z masky vyreže dlane, pri krátkom rukáve aj holé ruky
                           (len upper / overall), potom rozmazanie okraja (blur 9)
    5. generovanie       – CatVTONPipeline (SD 1.5 inpainting + attention váhy)
@@ -38,10 +39,13 @@ try_on(person_img, cloth_img, cloth_type, **options) -> dict
 | `paste_face` | `bool` (predvolene `True`) | vrátiť pôvodné pixely mimo masky |
 | `guidance_scale` | `float` (predvolene 2.5) | voliteľné, UI ho zatiaľ neposiela |
 | `sleeves` | `"auto"` \| `"short"` \| `"long"` \| `"sleeveless"` | voliteľné, ručné určenie rukávov namiesto CLIP (na testovanie); UI ho neposiela |
+| `masker` | `"sapiens"` \| `"schp"` | voliteľné, ktorý masker použiť (predvolene `VTON_MASKER`, inak `sapiens`); UI ho neposiela |
+| `compare_masks` | `bool` | voliteľné, vytvorí obe masky a uloží porovnanie (predvolene `VTON_COMPARE_MASKS`) |
 
 Návrat: `result` (výsledok v pôvodnom rozmere fotky), `mask` (upravená maska
 v pôvodnom rozmere), `info` (model, kroky, seed, rozlíšenie, GPU, čas, rukávy,
-chránené časti). `info` UI nezobrazuje – vypisuje sa do konzoly ako
+chránené časti, masker, čas masky, pri porovnaní podiel pixelov oboch masiek
+a cesta k PNG). `info` UI nezobrazuje – vypisuje sa do konzoly ako
 `try_on: {...}` (na Kaggle vo výstupe poslednej bunky).
 
 API endpoint `/try_on` v `app.py` sa týmto nemení – rozšírenie do prehliadača
@@ -64,6 +68,9 @@ Model sa načíta **raz pri importe** modulu, nie pri každom volaní:
 5. `AutoMasker` s váhami DensePose a SCHP.
 6. CLIP (`openai/clip-vit-base-patch32`, fp16) na určenie dĺžky rukáva. Ak sa
    nenačíta, backend beží ďalej a chráni len dlane (varovanie v konzole).
+7. Sapiens-seg (`facebook/sapiens-seg-{SAPIENS_SIZE}-torchscript`, fp32) – len
+   ak je masker `sapiens` alebo je zapnuté porovnanie. Ak sa nenačíta, maska
+   bude z AutoMaskera (varovanie v konzole).
 
 Prvé spustenie sťahuje niekoľko GB váh a dlho nič nevypisuje – nie je
 zaseknuté. Po načítaní sa vypíše `CatVTON pripravený za … s (GPU, dtype)`.
@@ -79,6 +86,7 @@ zaseknuté. Po načítaní sa vypíše `CatVTON pripravený za … s (GPU, dtype
 | `paste_face` = `repaint_result` z CatVTON | jednoduché a funkčné: tvár a pozadie zostanú ostré a pôvodné |
 | Výsledok sa vracia v pôvodnom rozmere fotky | sedí s UI; vygenerovaný výrez sa vloží späť do originálu |
 | Ochrana rúk podľa rukáva nového oblečenia (CLIP), nie podľa fotky osoby | chráni sa len holá koža podľa SCHP, takže stačí poznať nové oblečenie; pozri „Ochrana rúk“ |
+| Maska predvolene zo **Sapiens-seg**, AutoMasker ostáva ako záloha a na porovnanie | SCHP (2019) zle určí ruky pri neštandardných pózach; pozri „Maska zo Sapiens“ |
 | Torch sa v `requirements-gpu.txt` nepripína | Kaggle má torch s CUDA predinštalovaný, preinštalovanie by ho rozbilo |
 
 ## Závislosti
@@ -184,9 +192,62 @@ Vhodné na obhajobu a pre tab `compare_masks` (flag v `config.FEATURES`).
 - Dlhý rukáv + prekrížené ruky: pomôže sa len dlaniam, rukávy model kreslí sám.
 - Náklady: ~600 MB VRAM navyše, zlomok sekundy na volanie.
 
+## Maska zo Sapiens
+
+_Stav: **implementované 2026-11-06, čaká na test na Kaggle.**_ Analýza:
+[analyzy/2026-11-06-maska-parser.md](analyzy/2026-11-06-maska-parser.md).
+
+**Prečo.** SCHP (2019) pri prekrížených rukách či rukách za chrbtom označí
+ruku ako oblečenie a maska nedáva zmysel. Meta **Sapiens-seg** (2024) je
+trénovaný na oveľa rozmanitejších pózach a má 28 tried Goliath – zvlášť
+vrch/spodok oblečenia, trup, rameno, predlaktie a dlaň pre každú ruku.
+
+**Ako** (`src/masking.py`, `sapiens_mask`): rovnaký postup ako
+`AutoMasker.cloth_agnostic_mask`, len s triedami Sapiens namiesto SCHP
+a DensePose:
+
+| Časť | upper | lower | overall |
+|---|---|---|---|
+| maskuje sa vždy (pôvodné oblečenie) | Upper_Clothing, Apparel | Lower_Clothing | obe + Apparel |
+| telo (roztiahnuté v ¼ rozlíšení) | trup, ruky | nohy | všetko |
+| slabá ochrana | nohy, spodok | ruky, vrch, Apparel | – |
+| silná ochrana (vždy) | tvár + ústa, dlane, chodidlá | ← | ← |
+| holé ruky (CLIP: krátky / bez rukávov) | áno | – | áno |
+
+Vlasy, topánky a ponožky sú vždy chránené. Potom konvexný obal, Gaussovo
+rozmazanie a prah, pridanie pôvodného oblečenia, záverečné roztiahnutie
+a znova vyrezanie chránených rúk.
+
+**Vstup modelu:** RGB 1024×768, bez /255, normalizácia mean
+`(123.5, 116.5, 103.5)`, std `(58.5, 57.0, 57.5)`; výstup logity → bilineárne
+na rozmer fotky → argmax.
+
+**Prepínače** (premenné prostredia, nastavuje ich `kaggle/run.ipynb`):
+
+| Premenná | Hodnoty | Význam |
+|---|---|---|
+| `VTON_MASKER` | `sapiens` (predvolene) / `schp` | ktorý masker |
+| `SAPIENS_SIZE` | `0.3b` / `0.6b` (predvolene) / `1b` | veľkosť modelu (fp32: ~1,2 / 2,4 / 4,7 GB) |
+| `VTON_COMPARE_MASKS` | `1` | pri každom volaní vytvorí obe masky, uloží PNG (osoba, maska, maska) |
+| `VTON_MASK_DIR` | cesta | kam ukladať porovnania (predvolene `/kaggle/working/masks`) |
+
+**Záloha.** Ak sa Sapiens nenačíta (sťahovanie, VRAM), backend použije
+AutoMasker a v `info` je `"masker": "schp"`.
+
+**Riziká / overiť na Kaggle.**
+
+- VRAM na T4: CatVTON + CLIP + Sapiens 0.6B (fp32) – sledovať `nvidia-smi`.
+- Formát výstupu torchscriptu (tensor / tuple, rozlíšenie) – kód zvláda oba.
+- Trieda `Apparel` – predpoklad, že ide o vrchné oblečenie (bunda, kabát).
+- HF pri `.pt2` súbore ukazuje štítok „Suspicious“ (pickle v torchscripte);
+  ide o oficiálny repozitár `facebook/`.
+- Licencia CC-BY-NC 4.0 – pre školský projekt v poriadku.
+
 ## Plánované vylepšenia
 
-1. Otestovať ochranu rúk na Kaggle a výsledky zapísať do Zistení.
+1. Otestovať ochranu rúk a masku zo Sapiens na Kaggle (`COMPARE_MASKS = True`,
+   ~10 fotiek: spredu, prekrížené ruky, ruky za chrbtom, z boku) a výsledky
+   zapísať do Zistení.
 2. Ručný prepínač rukávov (auto / krátke / dlhé) v UI, ak sa CLIP často mýli.
 3. Ručná úprava masky v UI (štetec) – CatVTON vlastnú masku podporuje.
 4. Riešenie rozmazania pri veľkých fotkách (nezväčšovať výsledok / voľba
