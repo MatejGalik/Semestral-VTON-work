@@ -35,6 +35,7 @@ STEPS_MIN, STEPS_MAX, STEPS_DEFAULT = 20, 50, 30
 SEED_DEFAULT = 42  # -1 = náhodný seed
 PASTE_FACE_DEFAULT = True
 SHOW_MASK_DEFAULT = False
+MASK_GROW_MIN, MASK_GROW_MAX, MASK_GROW_DEFAULT = -20, 40, 0  # px pri 768×1024 (backend: ±40)
 
 EXPECTED_SECONDS = 15  # orientačný čas generovania na GPU
 
@@ -93,6 +94,8 @@ TEXTS = {
     "seed_info": "Rovnaký seed = rovnaký výsledok. −1 = náhodný.",
     "paste_face": "Vložiť pôvodnú tvár",
     "show_mask": "Zobraziť masku",
+    "mask_grow": "Šírka masky",
+    "mask_grow_info": "+ viac priestoru na iný strih (zvyšky starého oblečenia), − menej sa zmení okolie.",
     "examples": "Príklady",
     "examples_hint": "Klikni na príklad – predvyplní osobu aj produkt.",
     # Chyby (gr.Warning)

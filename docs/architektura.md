@@ -18,8 +18,8 @@ UI alebo cez API (pre rozšírenie do prehliadača).
 | UI | **Gradio 6** (`gr.Blocks`) | webové rozhranie, API endpoint, verejný link (`--share`) |
 | Obrázky | Pillow | načítanie, orezanie, maska v DEMO režime |
 | Model | **CatVTON** (`mix-48k-1024`) | virtuálne skúšanie – difúzny model na báze Stable Diffusion 1.5 inpainting |
-| Maskovanie | **Sapiens-seg** (Meta, predvolene); záložne AutoMasker z CatVTON: **DensePose** (detectron2) + **SCHP** | automatická maska oblasti, ktorá sa prekreslí |
-| Rukávy | **CLIP** (`openai/clip-vit-base-patch32`, zero-shot) | z fotky oblečenia určí krátky / dlhý / bez rukávov → ochrana rúk v maske |
+| Maskovanie | AutoMasker z CatVTON: **DensePose** (detectron2) + **SCHP**, upravený v `src/masking.py` | automatická maska oblasti, ktorá sa prekreslí |
+| Rukávy, dĺžka | **CLIP** (`openai/clip-vit-base-patch32`, zero-shot) | z fotky oblečenia určí rukáv (krátky / dlhý / bez) a dĺžku vrchu → ochrana rúk a predĺženie masky |
 | ML knižnice | PyTorch, diffusers, transformers, accelerate | beh modelu na GPU (fp16) |
 | Váhy | Hugging Face Hub (`huggingface_hub`) | sťahovanie váh CatVTON a SD inpainting |
 | GPU | **Kaggle Notebooks** (T4 16 GB / P100) | skutočné generovanie; lokálne PC nemá GPU |
@@ -63,7 +63,7 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
 | `ui/theme.py` | Gradio téma, CSS premenné z `config.COLORS`, `<head>` s písmami, vynútenie svetlého režimu |
 | `ui/styles.css`, `ui/page.css` | vzhľad komponentov a stránky |
 | `src/try_on.py` | backend s CatVTON ([backend.md](backend.md)) |
-| `src/masking.py` | generovanie masky: Sapiens-seg / AutoMasker + ochrana rúk, porovnanie masiek |
+| `src/masking.py` | úprava masky AutoMaskera: predĺženie pre dlhý vrch, šírka (posuvník), ochrana rúk |
 | `assets/examples/` | ukážkové osoby (`person_*.png`) a oblečenie (`cloth_*.png`) |
 | `kaggle/run.ipynb` | spúšťač na Kaggle |
 | `requirements.txt` / `requirements-gpu.txt` | závislosti UI / backendu |
@@ -76,7 +76,8 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
   oblečenia (Vrchný diel / Spodný diel / Celé / šaty), tlačidlo Vyskúšať,
   stiahnutie výsledku (PNG).
 - **Pokročilé nastavenia:** počet krokov (20–50, predvolene 30), seed
-  (−1 = náhodný), vložiť pôvodnú tvár, zobraziť masku.
+  (−1 = náhodný), vložiť pôvodnú tvár, zobraziť masku, **šírka masky**
+  (−20 až +40 px; + viac priestoru na iný strih, − menej sa zmení okolie).
 - **Príklady:** obrázky z `assets/examples/`.
 - **Tab O projekte:** popis pipeline, autori, technológie (texty v `config.ABOUT`).
 - **Budúce taby:** zapínajú sa flagom v `config.FEATURES` (`compare_masks`,
@@ -94,6 +95,10 @@ meniť** – používa ho rozšírenie do prehliadača.
 - Vstupy: `person_img`, `cloth_img`, `cloth_type` (`upper`/`lower`/`overall`),
   `steps`, `seed`, `paste_face`, `show_mask`
 - Výstupy: `result`, `mask`, `download` (PNG), `status` (text)
+- Šírka masky sa cez API neposiela (vždy 0). UI volá súkromný endpoint
+  `try_on_ui` (`run_tryon_ui` v `app.py`) s 8. vstupom `mask_grow`; verejné
+  `/try_on` je naviazané na neviditeľné tlačidlo v `ui/tabs.py`, aby sa jeho
+  vstupy nezmenili.
 
 Príklad volania cez `gradio_client` je v [README](../README.md#api).
 
@@ -110,27 +115,27 @@ Príklad volania cez `gradio_client` je v [README](../README.md#api).
 **Notebook `kaggle/run.ipynb` – Run All:**
 
 ```
-1. Nastavenia      repo, vetva, MASKER="sapiens", SAPIENS_SIZE="0.6b", COMPARE_MASKS
+1. Nastavenia      repo, vetva, PREFETCH_WEIGHTS
 2. GPU             nvidia-smi
 3. kód projektu    git clone, pri opakovanom behu len aktualizácia na origin/<vetva>
-4. CatVTON         git clone kódu + premenné prostredia (CATVTON_DIR, VTON_MASKER, …)
+4. CatVTON         git clone kódu + CATVTON_DIR
 5. závislosti      pip install requirements.txt + requirements-gpu.txt
-6. váhy (HF)       CatVTON (mix-48k-1024, SCHP, DensePose) + Sapiens-seg
+6. váhy (HF)       CatVTON (mix-48k-1024, SCHP, DensePose)
 7. spustenie       python app.py --share → odkaz gradio.live
 ```
 
 **Štart aplikácie** – raz sa načíta do GPU: SD 1.5 inpainting + CatVTON (fp16,
-bez NSFW filtra), AutoMasker (DensePose + SCHP), CLIP, Sapiens-seg 0.6B (fp32).
-Sapiens sa nenačíta → maska z AutoMaskera. Zlyhá hlavný backend → DEMO režim.
+bez NSFW filtra), AutoMasker (DensePose + SCHP), CLIP. Zlyhá backend → DEMO
+režim.
 
 **Každé „Vyskúšať“ (`try_on()`):**
 
 ```
 1. predspracovanie   osoba → výrez 3:4, 768×1024; oblečenie → biely okraj
-2. CLIP              dĺžka rukáva (len upper / overall)
-3. maska             Sapiens → triedy → oblečenie + telo podľa typu
-                     − tvár, vlasy, dlane, chodidlá (+ holé ruky pri krátkom rukáve)
-4. porovnanie        len pri COMPARE_MASKS: aj AutoMasker → PNG do /kaggle/working/masks
+2. CLIP              rukáv (upper / overall) + dĺžka vrchu (upper)
+3. maska             AutoMasker (DensePose + SCHP) podľa typu
+4. úprava masky      + predĺženie (dlhý vrch), ± šírka (posuvník),
+                     − dlane (+ holé ruky pri krátkom rukáve)
 5. blur okraja masky
 6. CatVTON           30–50 krokov difúzie – najdlhší krok
 7. paste_face        mimo masky pôvodné pixely

@@ -100,6 +100,19 @@ def _no_change(status: str = ""):
 
 def run_tryon(person_img, cloth_img, cloth_type, steps, seed, paste_face, show_mask,
               progress=gr.Progress()):
+    """Verejné API /try_on – pevné vstupy, šírka masky predvolená."""
+    return _run(person_img, cloth_img, cloth_type, steps, seed, paste_face, show_mask, 0, progress)
+
+
+def run_tryon_ui(person_img, cloth_img, cloth_type, steps, seed, paste_face, show_mask,
+                 mask_grow, progress=gr.Progress()):
+    """UI – navyše šírka masky z posuvníka."""
+    return _run(person_img, cloth_img, cloth_type, steps, seed, paste_face, show_mask,
+                mask_grow, progress)
+
+
+def _run(person_img, cloth_img, cloth_type, steps, seed, paste_face, show_mask,
+         mask_grow, progress):
     if person_img is None:
         _warn(T["err_no_person"])
         return _no_change()
@@ -120,6 +133,7 @@ def run_tryon(person_img, cloth_img, cloth_type, steps, seed, paste_face, show_m
         out = BACKEND(
             person_img, cloth_img, cloth_type,
             steps=int(steps), seed=seed, paste_face=bool(paste_face),
+            mask_grow=int(mask_grow or 0),
         )
         result = out["result"]
     except Exception as exc:
@@ -153,7 +167,7 @@ def build_app(demo_mode: bool) -> gr.Blocks:
         with gr.Column(elem_classes="vton-page"):
             build_header(demo_mode)
             with gr.Tabs(elem_classes="vton-tabs"):
-                build_tryon_tab(run_tryon)
+                build_tryon_tab(run_tryon, run_tryon_ui)
                 build_future_tabs()
                 build_about_tab()
     return app

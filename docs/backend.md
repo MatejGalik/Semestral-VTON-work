@@ -7,16 +7,17 @@ ako je, a čo sme zistili pri testovaní.
 
 ```
 UI (app.py, run_tryon)
-   │  person_img, cloth_img, cloth_type, steps, seed, paste_face
+   │  person_img, cloth_img, cloth_type, steps, seed, paste_face, mask_grow
    ▼
 src/try_on.py: try_on()
    1. predspracovanie   – osoba: výrez 3:4 + zmena na 768×1024
                           oblečenie: doplnenie bielym okrajom na 768×1024
-   2. dĺžka rukáva      – CLIP z fotky oblečenia (len upper / overall)
-   3. maska             – src/masking.py: Sapiens-seg (predvolene) alebo
-                          AutoMasker (DensePose + SCHP) podľa cloth_type
-   4. ochrana rúk       – z masky vyreže dlane, pri krátkom rukáve aj holé ruky
-                          (len upper / overall), potom rozmazanie okraja (blur 9)
+   2. nové oblečenie    – CLIP z fotky oblečenia: rukáv (upper / overall),
+                          dĺžka vrchu (upper)
+   3. maska             – AutoMasker (DensePose + SCHP) podľa cloth_type
+   4. úprava masky      – src/masking.py: predĺženie (dlhý vrch), šírka
+                          (mask_grow), ochrana dlaní a pri krátkom rukáve aj
+                          holých rúk, potom rozmazanie okraja (blur 9)
    5. generovanie       – CatVTONPipeline (SD 1.5 inpainting + attention váhy)
    6. paste_face        – mimo masky vráti pôvodné pixely (tvár, ruky, pozadie)
    7. späť do pôvodného rozmeru fotky
@@ -39,17 +40,17 @@ try_on(person_img, cloth_img, cloth_type, **options) -> dict
 | `paste_face` | `bool` (predvolene `True`) | vrátiť pôvodné pixely mimo masky |
 | `guidance_scale` | `float` (predvolene 2.5) | voliteľné, UI ho zatiaľ neposiela |
 | `sleeves` | `"auto"` \| `"short"` \| `"long"` \| `"sleeveless"` | voliteľné, ručné určenie rukávov namiesto CLIP (na testovanie); UI ho neposiela |
-| `masker` | `"sapiens"` \| `"schp"` | voliteľné, ktorý masker použiť (predvolene `VTON_MASKER`, inak `sapiens`); UI ho neposiela |
-| `compare_masks` | `bool` | voliteľné, vytvorí obe masky a uloží porovnanie (predvolene `VTON_COMPARE_MASKS`) |
+| `length` | `"auto"` \| `"cropped"` \| `"regular"` \| `"long"` | voliteľné, ručné určenie dĺžky vrchu namiesto CLIP (na testovanie); UI ho neposiela |
+| `mask_grow` | `int` px (predvolene 0, orezané na ±40) | šírka masky: + roztiahne, − zúži; UI posuvník „Šírka masky“ |
 
 Návrat: `result` (výsledok v pôvodnom rozmere fotky), `mask` (upravená maska
-v pôvodnom rozmere), `info` (model, kroky, seed, rozlíšenie, GPU, čas, rukávy,
-chránené časti, masker, čas masky, podiel tried Sapiens, pri porovnaní podiel pixelov oboch masiek
-a cesta k PNG). `info` UI nezobrazuje – vypisuje sa do konzoly ako
+v pôvodnom rozmere), `info` (model, kroky, seed, rozlíšenie, GPU, čas, rukávy, dĺžka,
+šírka masky, vykonané úpravy masky, podiel masky, chránené časti). `info` UI nezobrazuje – vypisuje sa do konzoly ako
 `try_on: {...}` (na Kaggle vo výstupe poslednej bunky).
 
 API endpoint `/try_on` v `app.py` sa týmto nemení – rozšírenie do prehliadača
-funguje ďalej.
+funguje ďalej (`mask_grow` je vtedy 0). Posuvník šírky posiela len UI cez
+súkromný endpoint `try_on_ui` (pozri `docs/architektura.md`, API).
 
 ## Načítanie modelu
 
@@ -66,11 +67,9 @@ Model sa načíta **raz pri importe** modulu, nie pri každom volaní:
    `booksforcharlie/stable-diffusion-inpainting` (pôvodný `runwayml` repozitár
    bol zmazaný; rovnakú kópiu používa oficiálne demo CatVTON).
 5. `AutoMasker` s váhami DensePose a SCHP.
-6. CLIP (`openai/clip-vit-base-patch32`, fp16) na určenie dĺžky rukáva. Ak sa
-   nenačíta, backend beží ďalej a chráni len dlane (varovanie v konzole).
-7. Sapiens-seg (`facebook/sapiens-seg-{SAPIENS_SIZE}-torchscript`, fp32) – len
-   ak je masker `sapiens` alebo je zapnuté porovnanie. Ak sa nenačíta, maska
-   bude z AutoMaskera (varovanie v konzole).
+6. CLIP (`openai/clip-vit-base-patch32`, fp16) na určenie rukáva a dĺžky
+   nového oblečenia. Ak sa nenačíta, backend beží ďalej s maskou AutoMaskera
+   (chráni len dlane, nepredlžuje; varovanie v konzole).
 
 Prvé spustenie sťahuje niekoľko GB váh a dlho nič nevypisuje – nie je
 zaseknuté. Po načítaní sa vypíše `CatVTON pripravený za … s (GPU, dtype)`.
@@ -86,7 +85,8 @@ zaseknuté. Po načítaní sa vypíše `CatVTON pripravený za … s (GPU, dtype
 | `paste_face` = `repaint_result` z CatVTON | jednoduché a funkčné: tvár a pozadie zostanú ostré a pôvodné |
 | Výsledok sa vracia v pôvodnom rozmere fotky | sedí s UI; vygenerovaný výrez sa vloží späť do originálu |
 | Ochrana rúk podľa rukáva nového oblečenia (CLIP), nie podľa fotky osoby | chráni sa len holá koža podľa SCHP, takže stačí poznať nové oblečenie; pozri „Ochrana rúk“ |
-| Maska predvolene zo **Sapiens-seg**, AutoMasker ostáva ako záloha a na porovnanie | SCHP (2019) zle určí ruky pri neštandardných pózach; pozri „Maska zo Sapiens“ |
+| Maska z **AutoMaskera** (SCHP + DensePose), Sapiens-seg vyskúšaný a odstránený | CatVTON bol trénovaný s maskami AutoMaskera; pri rukách pri tele je SCHP spoľahlivý; pozri „Sapiens-seg – vyskúšaný a odstránený“ |
+| Maska sa upravuje podľa **nového** oblečenia (rukáv, dĺžka – CLIP) a posuvníkom šírky | rieši zmenu strihu (krátky ↔ dlhý rukáv, tunika) bez ďalšieho modelu; pozri „Úprava masky podľa nového oblečenia“ |
 | NSFW filter SD vypnutý (`skip_safety_check=True`) | falošné poplachy pri koži / rukách na hrudi; ušetrí aj VRAM. Pozor: odkaz `--share` je verejný |
 | Torch sa v `requirements-gpu.txt` nepripína | Kaggle má torch s CUDA predinštalovaný, preinštalovanie by ho rozbilo |
 
@@ -131,27 +131,30 @@ predvolene zapnutý safety checker zo Stable Diffusion; keď ho výsledok
 pri prekrížených rukách s krátkym rukávom (veľa kože na hrudi), hoci maska bola
 správna. Riešenie: `skip_safety_check=True` v `CatVTONPipeline`.
 
-**Prázdna maska zo Sapiens (2026-11-06, príčina neznáma).** Pri prvom behu
-s prekríženými rukami bola maska celá čierna (prázdna) a výsledok bol pôvodná
-fotka. Ďalšie behy (ruky pri tele, neskôr aj prekrížené) fungovali. Možné
-príčiny: zlé triedy zo Sapiens, prvé volanie torchscriptu. Navrhnutá poistka:
-pri maske < 2 % prepnúť na AutoMasker + diagnostika tried v `info`.
-
-**Sapiens: odrezaný spodok trička a biely lem (2026-11-06).** Fotka do pása,
-prekrížené ruky, biele tričko → čierne tričko, seed 38, CLIP = krátky rukáv.
-Výsledok: spodok pôvodného bieleho trička zostal, s vodorovným švom; okolo
-nového trička a hlavne okolo rúk je svetlý lem. Maska (`show_mask`) končí
-vodorovnou čiarou ~6 % nad spodkom fotky a pod rukami pokrýva len úzky pás.
-Pozri „Oprava masky Sapiens (spodok, lem)“.
-
 **Prekrížené ruky nefungujú ani po oprave masky (2026-11-06) – vypustené
 z plánu.** Ani Sapiens s opravou spodku a lemu nedal použiteľný výsledok.
 Projekt počíta s fotkou osoby s rukami pri tele (podmienka na vstup).
 
-**Dlhý rukáv → krátky: ostávajú konce dlhého rukáva (2026-11-06, Sapiens).**
-Po poslednej oprave masky Sapiens (prah 127, menšie roztiahnutie) zostávajú
-pri zápästiach viditeľné konce pôvodného dlhého rukáva. Analýza a riešenia:
-„Riešenie: konce dlhého rukáva“.
+**Sapiens-seg – vyskúšaný a odstránený (2026-11-06).** Cieľ: presnejšia
+maska pri neštandardných pózach (analýza
+[analyzy/2026-11-06-maska-parser.md](analyzy/2026-11-06-maska-parser.md)).
+Meta Sapiens-seg 0.6B (28 tried) nahradil SCHP + DensePose, logika masky bola
+prepísaná podľa AutoMaskera. Výsledky na Kaggle:
+
+- prvý beh s prekríženými rukami: **prázdna maska** → nezmenená fotka
+  (príčina neistá – triedy alebo prvé volanie torchscriptu),
+- fotka do pása: **spodok trička ostal** (Sapiens ho označil ako
+  `Lower_Clothing`, ktoré sa pri vrchu chráni) a **svetlý lem** okolo rúk,
+- po sprísnení masky (prah 127, menšie roztiahnutie): tričko a ruky
+  **stiahnuté k stredu**, pri zápästiach **ostali konce dlhého rukáva** –
+  tesná maska nedáva modelu priestor na iný strih,
+- prekrížené ruky nepomohol vyriešiť ani Sapiens.
+
+Záver: bez prekrížených rúk Sapiens nemá výhodu, stojí ~2,4 GB VRAM a čas pri
+štarte a jeho maska sa líši od masiek, s ktorými bol CatVTON trénovaný. Kód aj
+prepínače (`VTON_MASKER`, `SAPIENS_SIZE`, `COMPARE_MASKS`) boli odstránené;
+história je v gite (commity `a561a6b`–`34ee6f7`). Poučenie: **maska má byť
+široká** (ako AutoMasker), presnejší parser kvalitu nezlepší.
 
 **Možné rozmazanie pri veľkých fotkách.** Výsledok vzniká v 768×1024 a pri
 vložení späť do veľkej fotky (napr. 3000×4000) sa zväčšuje. Pri zapnutom
@@ -189,20 +192,20 @@ Voľba `sleeves="short"` atď. obíde CLIP (na testovanie).
 **Kedy čo beží** (`try_on()`):
 
 ```
-pri štarte:   CatVTON + AutoMasker + CLIP (+ Sapiens) sa načítajú raz do GPU
+pri štarte:   CatVTON + AutoMasker + CLIP sa načítajú raz do GPU
 pri volaní:
 1. predspracovanie       osoba a oblečenie → 768×1024
-2. CLIP                  fotka oblečenia → krátky / dlhý / bez      ~0,05 s
-3. maska                 Sapiens (predvolene) alebo AutoMasker (DensePose + SCHP)
-4. ochrana rúk           maska − dlane − (holé ruky, ak krátky rukáv), potom blur
+2. CLIP                  rukáv (krátky / dlhý / bez) + dĺžka vrchu   ~0,1 s
+3. AutoMasker            fotka osoby → maska + DensePose + SCHP
+4. úprava masky          + predĺženie, ± šírka, − dlane − (holé ruky), potom blur
 5. CatVTON               osoba + oblečenie + upravená maska         najdlhší krok
 6. paste_face            mimo masky vráti originál → ruky pôvodné
 7. späť do pôvodnej veľkosti
 ```
 
 - Kroky 2 a 3 sú nezávislé, spája ich až krok 4.
-- Pri `lower` sa kroky 2 a 4 preskočia – maska pre spodok ruky nezahŕňa.
-- Pri maskeri `sapiens` sú kroky 3 a 4 spolu v `masking.sapiens_mask`.
+- Pri `lower` sa krok 2 preskočí a krok 4 beží len pri `mask_grow ≠ 0`
+  (vtedy sa chránia dlane aj ruky, ako v AutoMaskeri).
 - Masky DensePose a SCHP vracia AutoMasker (`densepose`, `schp_lip`,
   `schp_atr`), nič sa nepočíta navyše okrem CLIP.
 
@@ -210,8 +213,8 @@ pri volaní:
 `"sleeves_source": "clip"`, `"protected": "dlane, ruky"`. UI zobrazí upravenú
 masku (prepínač „zobraziť masku“). UI ani API `/try_on` sa nemení.
 
-**Overenie (treba spraviť).** ~10 fotiek (spredu, prekrížené ruky, ruky za
-chrbtom) × krátky a dlhý rukáv, porovnanie pred / po s rovnakým seedom.
+**Overenie (treba spraviť).** ~10 fotiek s rukami pri tele × krátky a dlhý
+rukáv, porovnanie pred / po s rovnakým seedom.
 Vhodné na obhajobu a pre tab `compare_masks` (flag v `config.FEATURES`).
 
 **Riziká.**
@@ -222,136 +225,52 @@ Vhodné na obhajobu a pre tab `compare_masks` (flag v `config.FEATURES`).
 - Dlhý rukáv + prekrížené ruky: pomôže sa len dlaniam, rukávy model kreslí sám.
 - Náklady: ~600 MB VRAM navyše, zlomok sekundy na volanie.
 
-## Maska zo Sapiens
+## Úprava masky podľa nového oblečenia (dĺžka, šírka)
 
-_Stav: **implementované 2026-11-06, čaká na test na Kaggle.**_ Analýza:
-[analyzy/2026-11-06-maska-parser.md](analyzy/2026-11-06-maska-parser.md).
+_Stav: **implementované 2026-11-06, čaká na test na Kaggle.**_
 
-**Prečo.** SCHP (2019) pri prekrížených rukách či rukách za chrbtom označí
-ruku ako oblečenie a maska nedáva zmysel. Meta **Sapiens-seg** (2024) je
-trénovaný na oveľa rozmanitejších pózach a má 28 tried Goliath – zvlášť
-vrch/spodok oblečenia, trup, rameno, predlaktie a dlaň pre každú ruku.
+**Problém.** Maska AutoMaskera vychádza z oblečenia, ktoré má osoba na fotke.
+Keď je nové oblečenie iného strihu, model nemá kam kresliť: dlhá tunika cez
+krátke tričko skončí v páse, pri širšom kúsku ostanú zvyšky starého oblečenia
+pri okraji masky.
 
-**Ako** (`src/masking.py`, `sapiens_mask`): rovnaký postup ako
-`AutoMasker.cloth_agnostic_mask`, len s triedami Sapiens namiesto SCHP
-a DensePose:
+**1. Dĺžka vrchu – CLIP (len `upper`).** `LENGTH_PROMPTS` v `src/try_on.py`:
+`cropped` / `regular` / `long`. Pri `long` s istotou ≥ 0,6
+(`LENGTH_MIN_CONFIDENCE`) `masking.adjust_mask` pridá do masky obdĺžnik pod
+trupom podľa DensePose: od polovice trupu o 35 % jeho výšky nižšie
+(`LONG_EXTEND`) a o 15 % šírky do strán (`LONG_SIDE_MARGIN`). Dlane, pri
+krátkom rukáve aj holé ruky, sa vyrežú až potom, takže ruky pri bokoch ostanú.
+`cropped` masku **neskracuje** – staré oblečenie musí byť v maske celé, inak by
+ho `paste_face` vrátil. Voľba `length="long"` obíde CLIP.
 
-| Časť | upper | lower | overall |
-|---|---|---|---|
-| maskuje sa vždy (pôvodné oblečenie) | Upper_Clothing, Apparel | Lower_Clothing | obe + Apparel |
-| telo (roztiahnuté v ¼ rozlíšení) | trup, ruky | nohy | všetko |
-| slabá ochrana | nohy, spodok (len ak sú vidieť nohy / topánky) | ruky, vrch, Apparel | – |
-| silná ochrana (vždy) | tvár + ústa, dlane, chodidlá | ← | ← |
-| holé ruky (CLIP: krátky / bez rukávov) | áno | – | áno |
+**2. Šírka masky – posuvník v UI** („Pokročilé nastavenia → Šírka masky“,
+−20 až +40 px, krok 5; backend orezáva na ±40, `MASK_GROW_LIMIT`). Kladná
+hodnota roztiahne masku eliptickým jadrom (viac priestoru na iný strih,
+zmiznú zvyšky starého oblečenia), záporná ju zúži (menej sa zmení okolie).
+Pri roztiahnutí sa z masky vyreže aj tvár a vlasy (SCHP, bez dilatácie, aby
+golier ostal v maske). Verejné API `/try_on` posiela vždy 0.
 
-Vlasy, topánky a ponožky sú vždy chránené. Potom konvexný obal, Gaussovo
-rozmazanie a prah, pridanie pôvodného oblečenia, záverečné roztiahnutie
-a znova vyrezanie chránených rúk.
+**Poradie v `adjust_mask`:** predĺženie → šírka → ochrana rúk (dlane vždy,
+holé ruky pri krátkom rukáve / bez rukávov, pri `lower` vždy) → tvár (len pri
+roztiahnutí).
 
-**Vstup modelu:** RGB 1024×768, bez /255, normalizácia mean
-`(123.5, 116.5, 103.5)`, std `(58.5, 57.0, 57.5)`; výstup logity → bilineárne
-na rozmer fotky → argmax.
-
-**Prepínače** (premenné prostredia, nastavuje ich `kaggle/run.ipynb`):
-
-| Premenná | Hodnoty | Význam |
-|---|---|---|
-| `VTON_MASKER` | `sapiens` (predvolene) / `schp` | ktorý masker |
-| `SAPIENS_SIZE` | `0.3b` / `0.6b` (predvolene) / `1b` | veľkosť modelu (fp32: ~1,2 / 2,4 / 4,7 GB) |
-| `VTON_COMPARE_MASKS` | `1` | pri každom volaní vytvorí obe masky, uloží PNG (osoba, maska, maska) |
-| `VTON_MASK_DIR` | cesta | kam ukladať porovnania (predvolene `/kaggle/working/masks`) |
-
-**Záloha.** Ak sa Sapiens nenačíta (sťahovanie, VRAM), backend použije
-AutoMasker a v `info` je `"masker": "schp"`.
+**Výstup v `info`:** `"length": "long (0.74, clip)"`, `"mask_grow": 10`,
+`"mask_changes": "predĺžená, šírka +10 px"`, `"mask_ratio": 0.31`.
 
 **Riziká / overiť na Kaggle.**
 
-- VRAM na T4: CatVTON + CLIP + Sapiens 0.6B (fp32) – sledovať `nvidia-smi`.
-- Formát výstupu torchscriptu (tensor / tuple, rozlíšenie) – kód zvláda oba.
-- Trieda `Apparel` – predpoklad, že ide o vrchné oblečenie (bunda, kabát).
-- HF pri `.pt2` súbore ukazuje štítok „Suspicious“ (pickle v torchscripte);
-  ide o oficiálny repozitár `facebook/`.
-- Licencia CC-BY-NC 4.0 – pre školský projekt v poriadku.
-
-## Oprava masky Sapiens (spodok, lem)
-
-_Stav: **implementované 2026-11-06, čaká na test na Kaggle.**_ Súvisí so
-zistením „Sapiens: odrezaný spodok trička a biely lem“.
-
-**Príčiny**
-
-1. *Odrezaný spodok (potvrdené maskou, trieda je hypotéza).* Sapiens
-   pravdepodobne označil spodok trička pri okraji fotky ako `Lower_Clothing`
-   (12). Pri `upper` je to slabá ochrana (`S_PROTECT_CLOTH["upper"]`), takže sa
-   z masky vyreže, hoci nohavice na fotke nie sú. Pod rukami ostane úzky pás
-   masky a model pod ním vidí pôvodné biele tričko, preto ho domaľuje
-   svetlosivo („spodné tričko“).
-2. *Biely lem (hypotéza).* Najsilnejší je na hrane chránených rúk: ruky sú
-   pri krátkom rukáve silná ochrana a ešte sa roztiahnu (`_cut`,
-   `PROTECT_DILATE`), takže medzi tričkom a rukou ostáva úzky pás masky, ktorý
-   model vyplní svetlým prechodom. Pri ramenách je maska oveľa širšia ako
-   postava (hull + blur ≥ 25 + dilate) a na jej okraji je v pozadí slabý obrys.
-
-**Oprava (`src/masking.py`, `sapiens_mask`)**
-
-1. **Spodok trička.** Pri `upper` sa `Lower_Clothing` chráni len vtedy, keď
-   sú na fotke nohy, chodidlá alebo topánky (`S_LEGS + S_FEET + S_SHOES_SOCKS`
-   ≥ 0,5 %, `LEGS_MIN_RATIO`). Inak sa maskuje spolu s tričkom a v `info` je
-   v `protected` poznámka „spodok maskovaný“. Nohy samotné nestačia – pri
-   dlhých nohaviciach Sapiens holé nohy nevidí, preto sa rátajú aj topánky.
-   Riziko: fotka do pása s viditeľným pásom nohavíc → pás sa prekreslí.
-2. ~~Ochrana rúk o 1 iteráciu~~ a 3. ~~prah po rozmazaní 127~~ – **vrátené
-   späť** na 2 iterácie a prah 25 (ako AutoMasker), pozri „Riešenie: konce
-   dlhého rukáva“. Tesná maska spôsobila, že model kreslil tričko a ruky užšie
-   a konce pôvodného dlhého rukáva ostali mimo masky. Konštanty
-   `SAPIENS_PROTECT_DILATE`, `SAPIENS_BLUR_THRESHOLD` ostávajú na ladenie.
-4. **Diagnostika:** `info["sapiens_classes"]` = podiel tried na fotke
-   (`upper_clothing`, `lower_clothing`, `apparel`, `torso`, `arms`, `hands`,
-   `legs`, `face`, `background`) – overí hypotézu 1 aj „prázdnu masku“.
-
-**Overenie (Kaggle):** tá istá fotka, seed 38 – spodok trička musí byť
-v maske a nový; lem okolo rúk menší. Kontrola na fotke s viditeľnými
-nohavicami, že sa nohavice nezmenia.
-
-## Riešenie: konce dlhého rukáva
-
-_Stav: **implementované riešenie B-lite 2026-11-06, čaká na test na Kaggle.**_
-Ak nepomôže → riešenie A (predvolene `schp`).
-
-**Pozorovanie:** výsledné tričko aj ruky sú prekreslené, ale „stiahnuté
-k stredu“ – užšie ako pôvodná postava; pri okraji ostávajú konce dlhého
-rukáva. Seed to nespôsobuje (maska od seedu nezávisí).
-
-**Prečo vznikajú (hypotézy, overiť maskou a `sapiens_classes`):**
-
-1. Pri krátkom novom rukáve sa chránia triedy rúk Sapiens (`S_ARMS`) a dlane
-   (+ roztiahnutie). Manžeta pri zápästí sa v Sapiens ľahko označí ako
-   predlaktie/dlaň → je chránená → `paste_face` vráti pôvodný rukáv.
-2. Prah 127 po rozmazaní a 1 iterácia roztiahnutia → maska tesne kopíruje
-   rukáv a jeho okraj ostane mimo masky.
-3. SCHP verzia maskuje celú ruku podľa DensePose (roztiahnutú) a chráni len
-   kožu podľa SCHP – rukáv je v maske celý, preto tam problém nebol.
-
-**Riešenia:**
-
-| # | Riešenie | Náročnosť |
-|---|---|---|
-| A | Vrátiť predvolený masker na `schp` (verzia pred Sapiens); Sapiens ponechať len ako voľbu / na porovnanie | malá – zmena predvolenej hodnoty v kóde a notebooku |
-| B | Opraviť Sapiens: pri krátkom rukáve pridať do masky roztiahnuté `Upper_Clothing` aj cez okraj chránených rúk (okrem samotných dlaní); prah späť na 25 v okolí rúk | stredná, treba ďalší test |
-| C | Úplne odstrániť Sapiens (kód, váhy, prepínače) | malá, stratí sa porovnanie |
-
-| B-lite | **zvolené:** vrátiť prah po rozmazaní na 25 a roztiahnutie ochrany rúk na 2 (ako AutoMasker); oprava `Lower_Clothing` ostáva | veľmi malá |
-
-Pôvodné odporúčanie bolo A (bez prekrížených rúk Sapiens nemá jasnú výhodu,
-~2,4 GB VRAM). Najprv sa skúša B-lite; overenie: tá istá fotka, dlhý → krátky
-rukáv, `COMPARE_MASKS = True`.
+- CLIP pri dĺžke na produktovej fotke (bez postavy) – istota v `info`; ak sa
+  často mýli, ručný prepínač v UI.
+- Predĺženie je obdĺžnik – pri tunike cez nohavice sa prekreslí aj časť
+  nohavíc a pozadia (zámerne, model tam nakreslí tuniku alebo pozadie).
+- Veľké roztiahnutie (+40) → model mení aj pozadie okolo postavy.
 
 ## Plánované vylepšenia
 
-1. Otestovať ochranu rúk a masku zo Sapiens na Kaggle (`COMPARE_MASKS = True`,
-   ~10 fotiek: spredu, prekrížené ruky, ruky za chrbtom, z boku) a výsledky
-   zapísať do Zistení.
-2. Ručný prepínač rukávov (auto / krátke / dlhé) v UI, ak sa CLIP často mýli.
+1. Otestovať na Kaggle ochranu rúk, predĺženie pre dlhý vrch a posuvník šírky
+   masky (~10 fotiek s rukami pri tele; krátky ↔ dlhý rukáv, tričko → tunika)
+   a výsledky zapísať do Zistení.
+2. Ručný prepínač rukávov a dĺžky (auto / …) v UI, ak sa CLIP často mýli.
 3. Ručná úprava masky v UI (štetec) – CatVTON vlastnú masku podporuje.
 4. Riešenie rozmazania pri veľkých fotkách (nezväčšovať výsledok / voľba
    „vrátiť v rozlíšení modelu“).
