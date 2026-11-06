@@ -116,6 +116,7 @@ _pipeline = CatVTONPipeline(
     attn_ckpt_version=ATTN_VERSION,
     weight_dtype=_DTYPE,
     use_tf32=True,
+    skip_safety_check=True,                   # NSFW filter SD vypnutý – falošné poplachy (pozri docs/backend.md)
     device=_DEVICE,
 )
 _automasker = AutoMasker(

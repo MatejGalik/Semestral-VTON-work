@@ -87,6 +87,7 @@ zaseknuté. Po načítaní sa vypíše `CatVTON pripravený za … s (GPU, dtype
 | Výsledok sa vracia v pôvodnom rozmere fotky | sedí s UI; vygenerovaný výrez sa vloží späť do originálu |
 | Ochrana rúk podľa rukáva nového oblečenia (CLIP), nie podľa fotky osoby | chráni sa len holá koža podľa SCHP, takže stačí poznať nové oblečenie; pozri „Ochrana rúk“ |
 | Maska predvolene zo **Sapiens-seg**, AutoMasker ostáva ako záloha a na porovnanie | SCHP (2019) zle určí ruky pri neštandardných pózach; pozri „Maska zo Sapiens“ |
+| NSFW filter SD vypnutý (`skip_safety_check=True`) | falošné poplachy pri koži / rukách na hrudi; ušetrí aj VRAM. Pozor: odkaz `--share` je verejný |
 | Torch sa v `requirements-gpu.txt` nepripína | Kaggle má torch s CUDA predinštalovaný, preinštalovanie by ho rozbilo |
 
 ## Závislosti
@@ -123,6 +124,18 @@ backend ju vždy zmenší na 768×1024.
 aby sa dali meniť aj rukávy (napr. tričko → dlhý rukáv). Chyba by bola, keby
 zasahovala do tváre/pozadia, nepokrývala pôvodné oblečenie alebo bola prázdna
 (DensePose nenašiel osobu).
+
+**NSFW filter – falošné poplachy (vypnuté 2026-11-06).** CatVTON má
+predvolene zapnutý safety checker zo Stable Diffusion; keď ho výsledok
+„zaujme“, nahradí ho obrázkom `resource/img/NSFW.jpg` s varovaním. Stalo sa to
+pri prekrížených rukách s krátkym rukávom (veľa kože na hrudi), hoci maska bola
+správna. Riešenie: `skip_safety_check=True` v `CatVTONPipeline`.
+
+**Prázdna maska zo Sapiens (2026-11-06, príčina neznáma).** Pri prvom behu
+s prekríženými rukami bola maska celá čierna (prázdna) a výsledok bol pôvodná
+fotka. Ďalšie behy (ruky pri tele, neskôr aj prekrížené) fungovali. Možné
+príčiny: zlé triedy zo Sapiens, prvé volanie torchscriptu. Navrhnutá poistka:
+pri maske < 2 % prepnúť na AutoMasker + diagnostika tried v `info`.
 
 **Možné rozmazanie pri veľkých fotkách.** Výsledok vzniká v 768×1024 a pri
 vložení späť do veľkej fotky (napr. 3000×4000) sa zväčšuje. Pri zapnutom
