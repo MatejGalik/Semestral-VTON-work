@@ -44,7 +44,7 @@ try_on(person_img, cloth_img, cloth_type, **options) -> dict
 
 Návrat: `result` (výsledok v pôvodnom rozmere fotky), `mask` (upravená maska
 v pôvodnom rozmere), `info` (model, kroky, seed, rozlíšenie, GPU, čas, rukávy,
-chránené časti, masker, čas masky, pri porovnaní podiel pixelov oboch masiek
+chránené časti, masker, čas masky, podiel tried Sapiens, pri porovnaní podiel pixelov oboch masiek
 a cesta k PNG). `info` UI nezobrazuje – vypisuje sa do konzoly ako
 `try_on: {...}` (na Kaggle vo výstupe poslednej bunky).
 
@@ -142,7 +142,7 @@ prekrížené ruky, biele tričko → čierne tričko, seed 38, CLIP = krátky r
 Výsledok: spodok pôvodného bieleho trička zostal, s vodorovným švom; okolo
 nového trička a hlavne okolo rúk je svetlý lem. Maska (`show_mask`) končí
 vodorovnou čiarou ~6 % nad spodkom fotky a pod rukami pokrýva len úzky pás.
-Pozri „Návrh: oprava masky Sapiens (spodok, lem)“.
+Pozri „Oprava masky Sapiens (spodok, lem)“.
 
 **Možné rozmazanie pri veľkých fotkách.** Výsledok vzniká v 768×1024 a pri
 vložení späť do veľkej fotky (napr. 3000×4000) sa zväčšuje. Pri zapnutom
@@ -231,7 +231,7 @@ a DensePose:
 |---|---|---|---|
 | maskuje sa vždy (pôvodné oblečenie) | Upper_Clothing, Apparel | Lower_Clothing | obe + Apparel |
 | telo (roztiahnuté v ¼ rozlíšení) | trup, ruky | nohy | všetko |
-| slabá ochrana | nohy, spodok | ruky, vrch, Apparel | – |
+| slabá ochrana | nohy, spodok (len ak sú vidieť nohy / topánky) | ruky, vrch, Apparel | – |
 | silná ochrana (vždy) | tvár + ústa, dlane, chodidlá | ← | ← |
 | holé ruky (CLIP: krátky / bez rukávov) | áno | – | áno |
 
@@ -264,10 +264,10 @@ AutoMasker a v `info` je `"masker": "schp"`.
   ide o oficiálny repozitár `facebook/`.
 - Licencia CC-BY-NC 4.0 – pre školský projekt v poriadku.
 
-## Návrh: oprava masky Sapiens (spodok, lem)
+## Oprava masky Sapiens (spodok, lem)
 
-_Stav: **návrh** (2026-11-06)._ Súvisí so zistením „Sapiens: odrezaný spodok
-trička a biely lem“.
+_Stav: **implementované 2026-11-06, čaká na test na Kaggle.**_ Súvisí so
+zistením „Sapiens: odrezaný spodok trička a biely lem“.
 
 **Príčiny**
 
@@ -285,16 +285,20 @@ trička a biely lem“.
 
 **Oprava (`src/masking.py`, `sapiens_mask`)**
 
-1. Pri `upper` chrániť `Lower_Clothing` len vtedy, keď sú na fotke nohy
-   (`S_LEGS` má nenulovú plochu, napr. > 0,5 % obrázka). Inak ho pridať do
-   `cloth` (maskovať).
-2. Menšie roztiahnutie ochrany rúk pri Sapiense (napr. 1 iterácia namiesto 2,
-   alebo bez záverečného `_cut` dilate), aby pri rukách neostával pás masky.
-3. Zmenšiť rozširovanie masky: vyšší prah po rozmazaní (napr. ≥ 127 namiesto
-   ≥ 25) alebo menšie jadro; porovnať s AutoMaskerom (`compare_masks`).
-4. Diagnostika: do `info` pridať podiel hlavných tried Sapiens (upper/lower
-   clothing, arms, legs, torso) – overí hypotézu 1 a pomôže aj pri „prázdnej
-   maske“.
+1. **Spodok trička.** Pri `upper` sa `Lower_Clothing` chráni len vtedy, keď
+   sú na fotke nohy, chodidlá alebo topánky (`S_LEGS + S_FEET + S_SHOES_SOCKS`
+   ≥ 0,5 %, `LEGS_MIN_RATIO`). Inak sa maskuje spolu s tričkom a v `info` je
+   v `protected` poznámka „spodok maskovaný“. Nohy samotné nestačia – pri
+   dlhých nohaviciach Sapiens holé nohy nevidí, preto sa rátajú aj topánky.
+   Riziko: fotka do pása s viditeľným pásom nohavíc → pás sa prekreslí.
+2. **Ochrana rúk** sa pri Sapiens rozťahuje o 1 iteráciu
+   (`SAPIENS_PROTECT_DILATE`, pri SCHP ostáva 2).
+3. **Rozširovanie masky:** prah po Gaussovom rozmazaní 127
+   (`SAPIENS_BLUR_THRESHOLD`) namiesto 25 ako v AutoMaskeri – maska tesnejšie
+   kopíruje obrys postavy.
+4. **Diagnostika:** `info["sapiens_classes"]` = podiel tried na fotke
+   (`upper_clothing`, `lower_clothing`, `apparel`, `torso`, `arms`, `hands`,
+   `legs`, `face`, `background`) – overí hypotézu 1 aj „prázdnu masku“.
 
 **Overenie (Kaggle):** tá istá fotka, seed 38 – spodok trička musí byť
 v maske a nový; lem okolo rúk menší. Kontrola na fotke s viditeľnými

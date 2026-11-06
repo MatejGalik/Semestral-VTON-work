@@ -186,14 +186,15 @@ def _detect_sleeves(cloth: Image.Image) -> tuple[str | None, float]:
 
 
 def _build_mask(person_r: Image.Image, cloth_type: str, protect_arms: bool, masker: str):
-    """Maska zvoleným maskerom (bez rozmazania). Vráti (maska, chránené časti)."""
+    """Maska zvoleným maskerom (bez rozmazania).
+    Vráti (maska, chránené časti, diagnostika – podiel tried Sapiens)."""
     if masker == "sapiens":
         parse = masking.sapiens_parse(_sapiens, person_r, _DEVICE)
-        return masking.sapiens_mask(parse, cloth_type, protect_arms)
+        return (*masking.sapiens_mask(parse, cloth_type, protect_arms), masking.sapiens_stats(parse))
     out = _automasker(person_r, cloth_type)
     if cloth_type in ("upper", "overall"):
-        return masking.protect_schp(out["mask"], out, protect_arms)
-    return out["mask"], []
+        return (*masking.protect_schp(out["mask"], out, protect_arms), {})
+    return out["mask"], [], {}
 
 
 # --------------------------------------------------------------------------- #
@@ -234,7 +235,7 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
     if masker == "sapiens" and _sapiens is None:
         masker = "schp"                                      # záloha
     mask_started = time.perf_counter()
-    mask, protected = _build_mask(person_r, cloth_type, protect_arms, masker)
+    mask, protected, classes = _build_mask(person_r, cloth_type, protect_arms, masker)
     mask_seconds = time.perf_counter() - mask_started
 
     # 3) Voliteľné porovnanie maskerov (PNG do MASK_DIR, podiel pixelov do info)
@@ -283,6 +284,7 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
         "protected": ", ".join(protected) or "-",
         "masker": f"sapiens-{SAPIENS_SIZE}" if masker == "sapiens" else "schp",
         "mask_seconds": round(mask_seconds, 2),
+        **({"sapiens_classes": classes} if classes else {}),
         **compare,
         "resolution": f"{WIDTH}x{HEIGHT}",
         "device": f"{_GPU_NAME} ({str(_DTYPE).replace('torch.', '')})",

@@ -21,7 +21,10 @@ from PIL import Image
 
 log = logging.getLogger(__name__)
 
-PROTECT_DILATE = 2                    # roztiahnutie chránenej oblasti rúk (iterácie)
+PROTECT_DILATE = 2                    # roztiahnutie chránenej oblasti rúk (iterácie) – SCHP
+SAPIENS_PROTECT_DILATE = 1            # pri Sapiens menej – inak pri rukách ostáva pás masky (lem)
+SAPIENS_BLUR_THRESHOLD = 127          # prah po rozmazaní (AutoMasker: 25 → maska širšia ako postava)
+LEGS_MIN_RATIO = 0.005                # nohy na fotke (podiel) → Lower_Clothing sú naozaj nohavice
 
 # --------------------------------------------------------------------------- #
 # SCHP / DensePose (indexy ako v CatVTON model/cloth_masker.py)
@@ -93,10 +96,11 @@ def _as_array(img: Image.Image, size: tuple[int, int]) -> np.ndarray:
     return np.array(img)
 
 
-def _cut(mask: Image.Image, protect: np.ndarray, kernel: np.ndarray) -> Image.Image:
+def _cut(mask: Image.Image, protect: np.ndarray, kernel: np.ndarray,
+         iterations: int = PROTECT_DILATE) -> Image.Image:
     """Z masky vyreže chránenú oblasť (mierne roztiahnutú, aby do nej
     nezasahoval rozmazaný okraj masky)."""
-    protect = cv2.dilate(protect.astype(np.uint8), kernel, iterations=PROTECT_DILATE) > 0
+    protect = cv2.dilate(protect.astype(np.uint8), kernel, iterations=iterations) > 0
     m = np.array(mask.convert("L")) > 127
     return Image.fromarray(((m & ~protect) * 255).astype(np.uint8))
 
@@ -163,8 +167,26 @@ def sapiens_parse(model, person: Image.Image, device: str) -> np.ndarray:
     return logits[0].argmax(dim=0).to(torch.uint8).cpu().numpy()
 
 
+SAPIENS_STATS = {                     # skupiny tried pre diagnostiku v info
+    "upper_clothing": (S_UPPER_CLOTHING,),
+    "lower_clothing": (S_LOWER_CLOTHING,),
+    "apparel": (S_APPAREL,),
+    "torso": (S_TORSO,),
+    "arms": S_ARMS,
+    "hands": S_HANDS,
+    "legs": S_LEGS,
+    "face": S_FACE,
+    "background": (S_BACKGROUND,),
+}
+
+
+def sapiens_stats(parse: np.ndarray) -> dict[str, float]:
+    """Podiel hlavných tried Sapiens na fotke (0–1) – diagnostika."""
+    return {k: round(float(np.isin(parse, v).mean()), 3) for k, v in SAPIENS_STATS.items()}
+
+
 def sapiens_mask(parse: np.ndarray, cloth_type: str, protect_arms: bool) -> tuple[Image.Image, list[str]]:
-    """Maska z mapy tried Sapiens – rovnaký postup ako AutoMasker.cloth_agnostic_mask,
+    """Maska z mapy tried Sapiens – postup podľa AutoMasker.cloth_agnostic_mask,
     hneď s ochranou rúk (dlane vždy, holé ruky pri protect_arms)."""
     h, w = parse.shape
     size = (w, h)
@@ -183,15 +205,23 @@ def sapiens_mask(parse: np.ndarray, cloth_type: str, protect_arms: bool) -> tupl
         protected.append("ruky")
     strong |= hands
 
+    # Lower_Clothing pri vrchu: na fotke do pása Sapiens označí spodok trička ako
+    # Lower_Clothing. Chrániť ho len, keď sú vidieť nohy (sú to naozaj nohavice).
+    protect_cloth = S_PROTECT_CLOTH[cloth_type]
+    mask_cloth = S_MASK_CLOTH[cloth_type]
+    if cloth_type == "upper" and of(S_LEGS + S_FEET + S_SHOES_SOCKS).mean() < LEGS_MIN_RATIO:
+        protect_cloth = ()
+        mask_cloth = mask_cloth + (S_LOWER_CLOTHING,)
+
     # Slabá ochrana: vlasy, topánky, iné oblečenie, časti tela mimo typu
     weak = (
         strong
         | of((S_HAIR,) + S_SHOES_SOCKS)
         | of(S_PROTECT_BODY[cloth_type])
-        | of(S_PROTECT_CLOTH[cloth_type])
+        | of(protect_cloth)
     )
 
-    cloth = of(S_MASK_CLOTH[cloth_type])
+    cloth = of(mask_cloth)
     body = of(S_MASK_BODY[cloth_type]).astype(np.uint8)
     # Telo roztiahnuť v 1/4 rozlíšení (ako AutoMasker) – priestor pre iný strih
     small = cv2.resize(body, None, fx=0.25, fy=0.25, interpolation=cv2.INTER_NEAREST)
@@ -200,12 +230,14 @@ def sapiens_mask(parse: np.ndarray, cloth_type: str, protect_arms: bool) -> tupl
 
     area = ((parse != S_BACKGROUND) & ~weak) | body
     area = _hull(area) & ~weak
-    area = cv2.GaussianBlur(area.astype(np.uint8) * 255, (blur, blur), 0) >= 25
+    area = cv2.GaussianBlur(area.astype(np.uint8) * 255, (blur, blur), 0) >= SAPIENS_BLUR_THRESHOLD
     area = (area | cloth) & ~strong
     area = cv2.dilate(area.astype(np.uint8), k_small, iterations=1) > 0
 
     # Chránené ruky ešte raz vyrezať – záverečné roztiahnutie do nich zasahuje
-    mask = _cut(Image.fromarray((area * 255).astype(np.uint8)), hands, k_small)
+    mask = _cut(Image.fromarray((area * 255).astype(np.uint8)), hands, k_small, SAPIENS_PROTECT_DILATE)
+    if cloth_type == "upper" and not protect_cloth:
+        protected.append("spodok maskovaný")
     return mask, protected
 
 
