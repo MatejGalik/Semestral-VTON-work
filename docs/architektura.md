@@ -105,6 +105,40 @@ Príklad volania cez `gradio_client` je v [README](../README.md#api).
 | Kaggle (GPU) | `kaggle/run.ipynb` → Run All | skutočné generovanie, verejný link `gradio.live` |
 | Vynútené demo | `python app.py --demo` | DEMO aj keď backend existuje |
 
+## Beh na Kaggle (workflow)
+
+**Notebook `kaggle/run.ipynb` – Run All:**
+
+```
+1. Nastavenia      repo, vetva, MASKER="sapiens", SAPIENS_SIZE="0.6b", COMPARE_MASKS
+2. GPU             nvidia-smi
+3. kód projektu    git clone, pri opakovanom behu len aktualizácia na origin/<vetva>
+4. CatVTON         git clone kódu + premenné prostredia (CATVTON_DIR, VTON_MASKER, …)
+5. závislosti      pip install requirements.txt + requirements-gpu.txt
+6. váhy (HF)       CatVTON (mix-48k-1024, SCHP, DensePose) + Sapiens-seg
+7. spustenie       python app.py --share → odkaz gradio.live
+```
+
+**Štart aplikácie** – raz sa načíta do GPU: SD 1.5 inpainting + CatVTON (fp16,
+bez NSFW filtra), AutoMasker (DensePose + SCHP), CLIP, Sapiens-seg 0.6B (fp32).
+Sapiens sa nenačíta → maska z AutoMaskera. Zlyhá hlavný backend → DEMO režim.
+
+**Každé „Vyskúšať“ (`try_on()`):**
+
+```
+1. predspracovanie   osoba → výrez 3:4, 768×1024; oblečenie → biely okraj
+2. CLIP              dĺžka rukáva (len upper / overall)
+3. maska             Sapiens → triedy → oblečenie + telo podľa typu
+                     − tvár, vlasy, dlane, chodidlá (+ holé ruky pri krátkom rukáve)
+4. porovnanie        len pri COMPARE_MASKS: aj AutoMasker → PNG do /kaggle/working/masks
+5. blur okraja masky
+6. CatVTON           30–50 krokov difúzie – najdlhší krok
+7. paste_face        mimo masky pôvodné pixely
+8. výstup            späť do pôvodnej veľkosti → UI; do konzoly „try_on: {...}“
+```
+
+Podrobnosti: [backend.md](backend.md).
+
 ## Pracovný postup tímu
 
 1. Úloha → (voliteľne) analýza subagentom `analytik` → `docs/analyzy/`.

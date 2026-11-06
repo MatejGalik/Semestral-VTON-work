@@ -137,6 +137,13 @@ fotka. Ďalšie behy (ruky pri tele, neskôr aj prekrížené) fungovali. Možn�
 príčiny: zlé triedy zo Sapiens, prvé volanie torchscriptu. Navrhnutá poistka:
 pri maske < 2 % prepnúť na AutoMasker + diagnostika tried v `info`.
 
+**Sapiens: odrezaný spodok trička a biely lem (2026-11-06).** Fotka do pása,
+prekrížené ruky, biele tričko → čierne tričko, seed 38, CLIP = krátky rukáv.
+Výsledok: spodok pôvodného bieleho trička zostal, s vodorovným švom; okolo
+nového trička a hlavne okolo rúk je svetlý lem. Maska (`show_mask`) končí
+vodorovnou čiarou ~6 % nad spodkom fotky a pod rukami pokrýva len úzky pás.
+Pozri „Návrh: oprava masky Sapiens (spodok, lem)“.
+
 **Možné rozmazanie pri veľkých fotkách.** Výsledok vzniká v 768×1024 a pri
 vložení späť do veľkej fotky (napr. 3000×4000) sa zväčšuje. Pri zapnutom
 `paste_face` je okolie ostrý originál, takže rozdiel je viditeľný. Zatiaľ
@@ -173,11 +180,11 @@ Voľba `sleeves="short"` atď. obíde CLIP (na testovanie).
 **Kedy čo beží** (`try_on()`):
 
 ```
-pri štarte:   CatVTON + AutoMasker + CLIP sa načítajú raz do GPU
+pri štarte:   CatVTON + AutoMasker + CLIP (+ Sapiens) sa načítajú raz do GPU
 pri volaní:
 1. predspracovanie       osoba a oblečenie → 768×1024
 2. CLIP                  fotka oblečenia → krátky / dlhý / bez      ~0,05 s
-3. AutoMasker            fotka osoby → maska + DensePose + SCHP
+3. maska                 Sapiens (predvolene) alebo AutoMasker (DensePose + SCHP)
 4. ochrana rúk           maska − dlane − (holé ruky, ak krátky rukáv), potom blur
 5. CatVTON               osoba + oblečenie + upravená maska         najdlhší krok
 6. paste_face            mimo masky vráti originál → ruky pôvodné
@@ -186,6 +193,7 @@ pri volaní:
 
 - Kroky 2 a 3 sú nezávislé, spája ich až krok 4.
 - Pri `lower` sa kroky 2 a 4 preskočia – maska pre spodok ruky nezahŕňa.
+- Pri maskeri `sapiens` sú kroky 3 a 4 spolu v `masking.sapiens_mask`.
 - Masky DensePose a SCHP vracia AutoMasker (`densepose`, `schp_lip`,
   `schp_atr`), nič sa nepočíta navyše okrem CLIP.
 
@@ -255,6 +263,42 @@ AutoMasker a v `info` je `"masker": "schp"`.
 - HF pri `.pt2` súbore ukazuje štítok „Suspicious“ (pickle v torchscripte);
   ide o oficiálny repozitár `facebook/`.
 - Licencia CC-BY-NC 4.0 – pre školský projekt v poriadku.
+
+## Návrh: oprava masky Sapiens (spodok, lem)
+
+_Stav: **návrh** (2026-11-06)._ Súvisí so zistením „Sapiens: odrezaný spodok
+trička a biely lem“.
+
+**Príčiny**
+
+1. *Odrezaný spodok (potvrdené maskou, trieda je hypotéza).* Sapiens
+   pravdepodobne označil spodok trička pri okraji fotky ako `Lower_Clothing`
+   (12). Pri `upper` je to slabá ochrana (`S_PROTECT_CLOTH["upper"]`), takže sa
+   z masky vyreže, hoci nohavice na fotke nie sú. Pod rukami ostane úzky pás
+   masky a model pod ním vidí pôvodné biele tričko, preto ho domaľuje
+   svetlosivo („spodné tričko“).
+2. *Biely lem (hypotéza).* Najsilnejší je na hrane chránených rúk: ruky sú
+   pri krátkom rukáve silná ochrana a ešte sa roztiahnu (`_cut`,
+   `PROTECT_DILATE`), takže medzi tričkom a rukou ostáva úzky pás masky, ktorý
+   model vyplní svetlým prechodom. Pri ramenách je maska oveľa širšia ako
+   postava (hull + blur ≥ 25 + dilate) a na jej okraji je v pozadí slabý obrys.
+
+**Oprava (`src/masking.py`, `sapiens_mask`)**
+
+1. Pri `upper` chrániť `Lower_Clothing` len vtedy, keď sú na fotke nohy
+   (`S_LEGS` má nenulovú plochu, napr. > 0,5 % obrázka). Inak ho pridať do
+   `cloth` (maskovať).
+2. Menšie roztiahnutie ochrany rúk pri Sapiense (napr. 1 iterácia namiesto 2,
+   alebo bez záverečného `_cut` dilate), aby pri rukách neostával pás masky.
+3. Zmenšiť rozširovanie masky: vyšší prah po rozmazaní (napr. ≥ 127 namiesto
+   ≥ 25) alebo menšie jadro; porovnať s AutoMaskerom (`compare_masks`).
+4. Diagnostika: do `info` pridať podiel hlavných tried Sapiens (upper/lower
+   clothing, arms, legs, torso) – overí hypotézu 1 a pomôže aj pri „prázdnej
+   maske“.
+
+**Overenie (Kaggle):** tá istá fotka, seed 38 – spodok trička musí byť
+v maske a nový; lem okolo rúk menší. Kontrola na fotke s viditeľnými
+nohavicami, že sa nohavice nezmenia.
 
 ## Plánované vylepšenia
 
