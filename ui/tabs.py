@@ -1,7 +1,6 @@
 """Stavba jednotlivých tabov UI.
 
-Tab Skúšanie volá backend len cez adaptéry z app.py: `run_fn` (`run_tryon`,
-verejné API /try_on) a `run_ui_fn` (`run_tryon_ui`, UI so šírkou masky).
+Tab Skúšanie volá backend len cez funkciu `run_fn` (adaptér `run_tryon` z app.py).
 """
 
 from __future__ import annotations
@@ -17,9 +16,6 @@ from config import (
     DEFAULT_CLOTH_TYPE,
     EXAMPLES_DIR,
     FEATURES,
-    MASK_GROW_DEFAULT,
-    MASK_GROW_MAX,
-    MASK_GROW_MIN,
     PASTE_FACE_DEFAULT,
     SEED_DEFAULT,
     SHOW_MASK_DEFAULT,
@@ -74,7 +70,7 @@ def _separator(symbol: str) -> None:
 # --------------------------------------------------------------------------- #
 # Tab: Skúšanie
 # --------------------------------------------------------------------------- #
-def build_tryon_tab(run_fn: Callable, run_ui_fn: Callable) -> None:
+def build_tryon_tab(run_fn: Callable) -> None:
     with gr.Tab(T["tab_tryon"], id="tryon"):
         # --- Typ oblečenia (nad kartami) ---------------------------------- #
         with gr.Column(elem_classes="vton-controls vton-controls-top"):
@@ -170,10 +166,6 @@ def build_tryon_tab(run_fn: Callable, run_ui_fn: Callable) -> None:
             with gr.Row():
                 paste_face = gr.Checkbox(value=PASTE_FACE_DEFAULT, label=T["paste_face"])
                 show_mask = gr.Checkbox(value=SHOW_MASK_DEFAULT, label=T["show_mask"])
-            mask_grow = gr.Slider(
-                MASK_GROW_MIN, MASK_GROW_MAX, value=MASK_GROW_DEFAULT, step=5,
-                label=T["mask_grow"], info=T["mask_grow_info"],
-            )
 
         # --- Príklady ----------------------------------------------------- #
         examples = [
@@ -203,22 +195,14 @@ def build_tryon_tab(run_fn: Callable, run_ui_fn: Callable) -> None:
         api_inputs = [person, cloth, cloth_type, steps, seed, paste_face, show_mask]
         api_outputs = [result, mask, download, status]
 
-        # UI posiela navyše šírku masky – vlastný (súkromný) endpoint, aby sa
-        # verejné /try_on nezmenilo.
         (
             submit.click(_start, None, [submit, status], queue=False,
                          api_visibility="private")
-            .then(run_ui_fn, api_inputs + [mask_grow], api_outputs, api_name="try_on_ui",
-                  api_visibility="private", concurrency_limit=1,
+            .then(run_fn, api_inputs, api_outputs, api_name="try_on",
+                  api_visibility="public", concurrency_limit=1,
                   show_progress="full", show_progress_on=[result])
             .then(_finish, None, submit, queue=False, api_visibility="private")
         )
-
-        # Verejné API /try_on (rozšírenie do prehliadača) – neviditeľné tlačidlo,
-        # šírka masky = predvolená.
-        api_trigger = gr.Button(visible=False)
-        api_trigger.click(run_fn, api_inputs, api_outputs, api_name="try_on",
-                          api_visibility="public", concurrency_limit=1)
 
         show_mask.change(
             lambda show, m: gr.update(visible=bool(show and m is not None)),

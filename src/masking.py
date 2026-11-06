@@ -2,10 +2,7 @@
 
 Postup (adjust_mask):
 1. predĺženie   – dlhý vrch (tunika, dlhý sveter) → maska siaha nižšie cez boky
-2. šírka        – posuvník v UI: + roztiahne masku (viac priestoru na iný strih),
-                  − zúži ju (menej sa zmení okolie)
-3. ochrana      – vyreže dlane, pri krátkom rukáve / bez rukávov aj holé ruky,
-                  pri roztiahnutí aj tvár a vlasy
+2. ochrana      – vyreže dlane, pri krátkom rukáve / bez rukávov aj holé ruky
 
 Modul neimportuje kód CatVTON – mapy tried mu odovzdáva src/try_on.py.
 Masky sú PIL "L" 768×1024 (0 / 255), ešte bez rozmazania okraja.
@@ -25,8 +22,6 @@ LONG_SIDE_MARGIN = 0.15               # … a do šírky o 15 % šírky trupu na
 DENSEPOSE_TORSO = (1, 2)
 DENSEPOSE_HANDS = (3, 4)
 SCHP_ARMS = (14, 15)                  # Left-arm, Right-arm – v LIP aj ATR
-SCHP_LIP_HEAD = (2, 13)               # Hair, Face
-SCHP_ATR_HEAD = (2, 11)               # Hair, Face
 
 
 def _kernel(size: tuple[int, int], divisor: int) -> np.ndarray:
@@ -58,22 +53,12 @@ def _extend_long(m: np.ndarray, densepose: np.ndarray) -> bool:
     return True
 
 
-def _grow(m: np.ndarray, px: int) -> np.ndarray:
-    """Roztiahne (px > 0) alebo zúži (px < 0) masku o px pixelov."""
-    if px == 0:
-        return m
-    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * abs(px) + 1,) * 2)
-    op = cv2.dilate if px > 0 else cv2.erode
-    return op(m.astype(np.uint8), k) > 0
-
-
 def adjust_mask(
     mask: Image.Image,
     parts: dict,
     cloth_type: str,
     protect_arms: bool = False,
     long_garment: bool = False,
-    grow: int = 0,
 ) -> tuple[Image.Image, list[str], list[str]]:
     """Upraví masku AutoMaskera. `parts` = výstup AutoMaskera (densepose, schp_lip, schp_atr).
 
@@ -87,35 +72,24 @@ def adjust_mask(
     upper = cloth_type in ("upper", "overall")
     changes: list[str] = []
 
-    # Spodok bez zmeny šírky – maska AutoMaskera ostáva presne ako bola
-    if not upper and grow == 0:
+    # Spodok – maska AutoMaskera ostáva presne ako bola
+    if not upper:
         return mask, [], changes
 
     # 1) Predĺženie pre dlhý vrch
     if cloth_type == "upper" and long_garment and _extend_long(m, densepose):
         changes.append("predĺžená")
 
-    # 2) Šírka masky
-    if grow:
-        m = _grow(m, grow)
-        changes.append(f"šírka {grow:+d} px")
-
-    # 3) Ochrana: dlane vždy, holé ruky pri krátkom rukáve (a pri spodku vždy)
+    # 2) Ochrana: dlane vždy, holé ruky pri krátkom rukáve / bez rukávov
     kernel = _kernel(size, 250)       # rovnaká veľkosť ako v AutoMaskeri
     skin = np.isin(lip, SCHP_ARMS) | np.isin(atr, SCHP_ARMS)
     hands = cv2.dilate(np.isin(densepose, DENSEPOSE_HANDS).astype(np.uint8), kernel) > 0
     protect = hands & skin
     protected = ["dlane"]
-    if (upper and protect_arms) or cloth_type == "lower":
+    if protect_arms:
         protect |= skin
         protected.append("ruky")
     protect = cv2.dilate(protect.astype(np.uint8), kernel, iterations=PROTECT_DILATE) > 0
-
-    # Tvár a vlasy – len pri roztiahnutí (bez dilatácie, aby ostal golier v maske)
-    if grow > 0:
-        protect |= np.isin(lip, SCHP_LIP_HEAD) | np.isin(atr, SCHP_ATR_HEAD)
-        protected.append("tvár")
-
     m &= ~protect
     return Image.fromarray((m * 255).astype(np.uint8)), protected, changes
 

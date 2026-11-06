@@ -63,7 +63,7 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
 | `ui/theme.py` | Gradio téma, CSS premenné z `config.COLORS`, `<head>` s písmami, vynútenie svetlého režimu |
 | `ui/styles.css`, `ui/page.css` | vzhľad komponentov a stránky |
 | `src/try_on.py` | backend s CatVTON ([backend.md](backend.md)) |
-| `src/masking.py` | úprava masky AutoMaskera: predĺženie pre dlhý vrch, šírka (posuvník), ochrana rúk |
+| `src/masking.py` | úprava masky AutoMaskera: predĺženie pre dlhý vrch, ochrana rúk |
 | `assets/examples/` | ukážkové osoby (`person_*.png`) a oblečenie (`cloth_*.png`) |
 | `kaggle/run.ipynb` | spúšťač na Kaggle |
 | `requirements.txt` / `requirements-gpu.txt` | závislosti UI / backendu |
@@ -76,8 +76,7 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
   oblečenia (Vrchný diel / Spodný diel / Celé / šaty), tlačidlo Vyskúšať,
   stiahnutie výsledku (PNG).
 - **Pokročilé nastavenia:** počet krokov (20–50, predvolene 30), seed
-  (−1 = náhodný), vložiť pôvodnú tvár, zobraziť masku, **šírka masky**
-  (−20 až +40 px; + viac priestoru na iný strih, − menej sa zmení okolie).
+  (−1 = náhodný), vložiť pôvodnú tvár, zobraziť masku.
 - **Príklady:** obrázky z `assets/examples/`.
 - **Tab O projekte:** popis pipeline, autori, technológie (texty v `config.ABOUT`).
 - **Budúce taby:** zapínajú sa flagom v `config.FEATURES` (`compare_masks`,
@@ -95,10 +94,6 @@ meniť** – používa ho rozšírenie do prehliadača.
 - Vstupy: `person_img`, `cloth_img`, `cloth_type` (`upper`/`lower`/`overall`),
   `steps`, `seed`, `paste_face`, `show_mask`
 - Výstupy: `result`, `mask`, `download` (PNG), `status` (text)
-- Šírka masky sa cez API neposiela (vždy 0). UI volá súkromný endpoint
-  `try_on_ui` (`run_tryon_ui` v `app.py`) s 8. vstupom `mask_grow`; verejné
-  `/try_on` je naviazané na neviditeľné tlačidlo v `ui/tabs.py`, aby sa jeho
-  vstupy nezmenili.
 
 Príklad volania cez `gradio_client` je v [README](../README.md#api).
 
@@ -134,7 +129,7 @@ režim.
 1. predspracovanie   osoba → výrez 3:4, 768×1024; oblečenie → biely okraj
 2. CLIP              rukáv (upper / overall) + dĺžka vrchu (upper)
 3. maska             AutoMasker (DensePose + SCHP) podľa typu
-4. úprava masky      + predĺženie (dlhý vrch), ± šírka (posuvník),
+4. úprava masky      + predĺženie (dlhý vrch),
                      − dlane (+ holé ruky pri krátkom rukáve)
 5. blur okraja masky
 6. CatVTON           30–50 krokov difúzie – najdlhší krok

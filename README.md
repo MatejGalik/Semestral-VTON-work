@@ -189,7 +189,7 @@ ui/page.css           # globálne štýly stránky (vkladané do <head>)
 ui/tabs.py            # build_tryon_tab(), build_about_tab(), budúce taby
 assets/examples/      # ukážkové osoby a produkty
 src/try_on.py         # backend: CatVTON (potrebuje GPU)
-src/masking.py        # úprava masky: dĺžka vrchu, šírka, ochrana rúk
+src/masking.py        # úprava masky: dĺžka vrchu, ochrana rúk
 requirements.txt      # závislosti UI (stačia lokálne)
 requirements-gpu.txt  # závislosti backendu (Kaggle)
 kaggle/run.ipynb      # spúšťač na Kaggle

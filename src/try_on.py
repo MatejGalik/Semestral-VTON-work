@@ -10,8 +10,7 @@ Kontrakt (používa ho app.py a API /try_on):
                             sleeves ("auto" | "short" | "long" | "sleeveless",
                             voliteľné – ručné určenie rukávov namiesto CLIP),
                             length ("auto" | "cropped" | "regular" | "long",
-                            voliteľné – ručné určenie dĺžky vrchu namiesto CLIP),
-                            mask_grow (int px, voliteľné – + širšia, − užšia maska)
+                            voliteľné – ručné určenie dĺžky vrchu namiesto CLIP)
 
 Maska: AutoMasker z CatVTON (DensePose + SCHP), upravená v src/masking.py podľa
 nového oblečenia (CLIP): dlhý vrch → maska siaha nižšie; krátky rukáv / bez
@@ -59,7 +58,6 @@ LENGTH_PROMPTS = {                            # dĺžka vrchu
     "long": "a product photo of a long top, tunic, long sweater or coat that covers the hips",
 }
 LENGTH_MIN_CONFIDENCE = 0.6                   # pod touto istotou sa maska nepredĺži
-MASK_GROW_LIMIT = 40                          # rozsah posuvníka šírky masky (± px pri 768×1024)
 
 
 def _find_catvton_dir() -> Path:
@@ -215,8 +213,7 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
     if cloth_type == "upper":
         length, l_conf, l_src = _classify(cloth_r, LENGTH_PROMPTS, options.get("length", "auto"))
 
-    # 2) Maska AutoMaskera + úpravy (predĺženie, šírka, ochrana rúk)
-    grow = max(-MASK_GROW_LIMIT, min(MASK_GROW_LIMIT, int(options.get("mask_grow", 0) or 0)))
+    # 2) Maska AutoMaskera + úpravy (predĺženie, ochrana rúk)
     masker_out = _automasker(person_r, cloth_type)
     mask, protected, changes = masking.adjust_mask(
         masker_out["mask"],
@@ -224,7 +221,6 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
         cloth_type,
         protect_arms=sleeves in ("short", "sleeveless") and s_conf >= SLEEVE_MIN_CONFIDENCE,
         long_garment=length == "long" and l_conf >= LENGTH_MIN_CONFIDENCE,
-        grow=grow,
     )
     mask_soft = _mask_processor.blur(mask, blur_factor=MASK_BLUR)
 
@@ -257,7 +253,6 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
         "paste_face": paste_face,
         "sleeves": _fmt(sleeves, s_conf, s_src),
         "length": _fmt(length, l_conf, l_src),
-        "mask_grow": grow,
         "mask_changes": ", ".join(changes) or "-",
         "mask_ratio": masking.mask_ratio(mask),
         "protected": ", ".join(protected) or "-",

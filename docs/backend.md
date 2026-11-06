@@ -7,7 +7,7 @@ ako je, a čo sme zistili pri testovaní.
 
 ```
 UI (app.py, run_tryon)
-   │  person_img, cloth_img, cloth_type, steps, seed, paste_face, mask_grow
+   │  person_img, cloth_img, cloth_type, steps, seed, paste_face
    ▼
 src/try_on.py: try_on()
    1. predspracovanie   – osoba: výrez 3:4 + zmena na 768×1024
@@ -15,9 +15,9 @@ src/try_on.py: try_on()
    2. nové oblečenie    – CLIP z fotky oblečenia: rukáv (upper / overall),
                           dĺžka vrchu (upper)
    3. maska             – AutoMasker (DensePose + SCHP) podľa cloth_type
-   4. úprava masky      – src/masking.py: predĺženie (dlhý vrch), šírka
-                          (mask_grow), ochrana dlaní a pri krátkom rukáve aj
-                          holých rúk, potom rozmazanie okraja (blur 9)
+   4. úprava masky      – src/masking.py: predĺženie (dlhý vrch), ochrana
+                          dlaní a pri krátkom rukáve aj holých rúk, potom
+                          rozmazanie okraja (blur 9)
    5. generovanie       – CatVTONPipeline (SD 1.5 inpainting + attention váhy)
    6. paste_face        – mimo masky vráti pôvodné pixely (tvár, ruky, pozadie)
    7. späť do pôvodného rozmeru fotky
@@ -41,16 +41,14 @@ try_on(person_img, cloth_img, cloth_type, **options) -> dict
 | `guidance_scale` | `float` (predvolene 2.5) | voliteľné, UI ho zatiaľ neposiela |
 | `sleeves` | `"auto"` \| `"short"` \| `"long"` \| `"sleeveless"` | voliteľné, ručné určenie rukávov namiesto CLIP (na testovanie); UI ho neposiela |
 | `length` | `"auto"` \| `"cropped"` \| `"regular"` \| `"long"` | voliteľné, ručné určenie dĺžky vrchu namiesto CLIP (na testovanie); UI ho neposiela |
-| `mask_grow` | `int` px (predvolene 0, orezané na ±40) | šírka masky: + roztiahne, − zúži; UI posuvník „Šírka masky“ |
 
 Návrat: `result` (výsledok v pôvodnom rozmere fotky), `mask` (upravená maska
 v pôvodnom rozmere), `info` (model, kroky, seed, rozlíšenie, GPU, čas, rukávy, dĺžka,
-šírka masky, vykonané úpravy masky, podiel masky, chránené časti). `info` UI nezobrazuje – vypisuje sa do konzoly ako
+vykonané úpravy masky, podiel masky, chránené časti). `info` UI nezobrazuje – vypisuje sa do konzoly ako
 `try_on: {...}` (na Kaggle vo výstupe poslednej bunky).
 
 API endpoint `/try_on` v `app.py` sa týmto nemení – rozšírenie do prehliadača
-funguje ďalej (`mask_grow` je vtedy 0). Posuvník šírky posiela len UI cez
-súkromný endpoint `try_on_ui` (pozri `docs/architektura.md`, API).
+funguje ďalej.
 
 ## Načítanie modelu
 
@@ -86,7 +84,7 @@ zaseknuté. Po načítaní sa vypíše `CatVTON pripravený za … s (GPU, dtype
 | Výsledok sa vracia v pôvodnom rozmere fotky | sedí s UI; vygenerovaný výrez sa vloží späť do originálu |
 | Ochrana rúk podľa rukáva nového oblečenia (CLIP), nie podľa fotky osoby | chráni sa len holá koža podľa SCHP, takže stačí poznať nové oblečenie; pozri „Ochrana rúk“ |
 | Maska z **AutoMaskera** (SCHP + DensePose), Sapiens-seg vyskúšaný a odstránený | CatVTON bol trénovaný s maskami AutoMaskera; pri rukách pri tele je SCHP spoľahlivý; pozri „Sapiens-seg – vyskúšaný a odstránený“ |
-| Maska sa upravuje podľa **nového** oblečenia (rukáv, dĺžka – CLIP) a posuvníkom šírky | rieši zmenu strihu (krátky ↔ dlhý rukáv, tunika) bez ďalšieho modelu; pozri „Úprava masky podľa nového oblečenia“ |
+| Maska sa upravuje podľa **nového** oblečenia (rukáv, dĺžka – CLIP) | rieši zmenu strihu (krátky ↔ dlhý rukáv, tunika) bez ďalšieho modelu; pozri „Úprava masky podľa nového oblečenia“ |
 | NSFW filter SD vypnutý (`skip_safety_check=True`) | falošné poplachy pri koži / rukách na hrudi; ušetrí aj VRAM. Pozor: odkaz `--share` je verejný |
 | Torch sa v `requirements-gpu.txt` nepripína | Kaggle má torch s CUDA predinštalovaný, preinštalovanie by ho rozbilo |
 
@@ -156,6 +154,11 @@ prepínače (`VTON_MASKER`, `SAPIENS_SIZE`, `COMPARE_MASKS`) boli odstránené;
 história je v gite (commity `a561a6b`–`34ee6f7`). Poučenie: **maska má byť
 široká** (ako AutoMasker), presnejší parser kvalitu nezlepší.
 
+**Posuvník „Šírka masky“ nefungoval – odstránený (2026-11-06).** Roztiahnutie
+/ zúženie masky (−20 až +40 px) v UI na Kaggle neprinieslo viditeľné
+zlepšenie, preto bol odstránený z UI aj backendu (commit `37331f7` ho
+pridal). Dĺžka vrchu (CLIP) ostáva.
+
 **Možné rozmazanie pri veľkých fotkách.** Výsledok vzniká v 768×1024 a pri
 vložení späť do veľkej fotky (napr. 3000×4000) sa zväčšuje. Pri zapnutom
 `paste_face` je okolie ostrý originál, takže rozdiel je viditeľný. Zatiaľ
@@ -197,15 +200,14 @@ pri volaní:
 1. predspracovanie       osoba a oblečenie → 768×1024
 2. CLIP                  rukáv (krátky / dlhý / bez) + dĺžka vrchu   ~0,1 s
 3. AutoMasker            fotka osoby → maska + DensePose + SCHP
-4. úprava masky          + predĺženie, ± šírka, − dlane − (holé ruky), potom blur
+4. úprava masky          + predĺženie, − dlane − (holé ruky), potom blur
 5. CatVTON               osoba + oblečenie + upravená maska         najdlhší krok
 6. paste_face            mimo masky vráti originál → ruky pôvodné
 7. späť do pôvodnej veľkosti
 ```
 
 - Kroky 2 a 3 sú nezávislé, spája ich až krok 4.
-- Pri `lower` sa krok 2 preskočí a krok 4 beží len pri `mask_grow ≠ 0`
-  (vtedy sa chránia dlane aj ruky, ako v AutoMaskeri).
+- Pri `lower` sa kroky 2 a 4 preskočia – maska pre spodok ruky nezahŕňa.
 - Masky DensePose a SCHP vracia AutoMasker (`densepose`, `schp_lip`,
   `schp_atr`), nič sa nepočíta navyše okrem CLIP.
 
@@ -225,14 +227,13 @@ Vhodné na obhajobu a pre tab `compare_masks` (flag v `config.FEATURES`).
 - Dlhý rukáv + prekrížené ruky: pomôže sa len dlaniam, rukávy model kreslí sám.
 - Náklady: ~600 MB VRAM navyše, zlomok sekundy na volanie.
 
-## Úprava masky podľa nového oblečenia (dĺžka, šírka)
+## Úprava masky podľa nového oblečenia (dĺžka)
 
 _Stav: **implementované 2026-11-06, čaká na test na Kaggle.**_
 
 **Problém.** Maska AutoMaskera vychádza z oblečenia, ktoré má osoba na fotke.
 Keď je nové oblečenie iného strihu, model nemá kam kresliť: dlhá tunika cez
-krátke tričko skončí v páse, pri širšom kúsku ostanú zvyšky starého oblečenia
-pri okraji masky.
+krátke tričko skončí v páse.
 
 **1. Dĺžka vrchu – CLIP (len `upper`).** `LENGTH_PROMPTS` v `src/try_on.py`:
 `cropped` / `regular` / `long`. Pri `long` s istotou ≥ 0,6
@@ -243,19 +244,13 @@ krátkom rukáve aj holé ruky, sa vyrežú až potom, takže ruky pri bokoch os
 `cropped` masku **neskracuje** – staré oblečenie musí byť v maske celé, inak by
 ho `paste_face` vrátil. Voľba `length="long"` obíde CLIP.
 
-**2. Šírka masky – posuvník v UI** („Pokročilé nastavenia → Šírka masky“,
-−20 až +40 px, krok 5; backend orezáva na ±40, `MASK_GROW_LIMIT`). Kladná
-hodnota roztiahne masku eliptickým jadrom (viac priestoru na iný strih,
-zmiznú zvyšky starého oblečenia), záporná ju zúži (menej sa zmení okolie).
-Pri roztiahnutí sa z masky vyreže aj tvár a vlasy (SCHP, bez dilatácie, aby
-golier ostal v maske). Verejné API `/try_on` posiela vždy 0.
+**Poradie v `adjust_mask`:** predĺženie → ochrana rúk (dlane vždy, holé ruky
+pri krátkom rukáve / bez rukávov). Pri `lower` sa maska nemení.
 
-**Poradie v `adjust_mask`:** predĺženie → šírka → ochrana rúk (dlane vždy,
-holé ruky pri krátkom rukáve / bez rukávov, pri `lower` vždy) → tvár (len pri
-roztiahnutí).
+Posuvník šírky masky bol skúšaný a odstránený – pozri Zistenia.
 
-**Výstup v `info`:** `"length": "long (0.74, clip)"`, `"mask_grow": 10`,
-`"mask_changes": "predĺžená, šírka +10 px"`, `"mask_ratio": 0.31`.
+**Výstup v `info`:** `"length": "long (0.74, clip)"`,
+`"mask_changes": "predĺžená"`, `"mask_ratio": 0.31`.
 
 **Riziká / overiť na Kaggle.**
 
@@ -263,13 +258,12 @@ roztiahnutí).
   často mýli, ručný prepínač v UI.
 - Predĺženie je obdĺžnik – pri tunike cez nohavice sa prekreslí aj časť
   nohavíc a pozadia (zámerne, model tam nakreslí tuniku alebo pozadie).
-- Veľké roztiahnutie (+40) → model mení aj pozadie okolo postavy.
 
 ## Plánované vylepšenia
 
-1. Otestovať na Kaggle ochranu rúk, predĺženie pre dlhý vrch a posuvník šírky
-   masky (~10 fotiek s rukami pri tele; krátky ↔ dlhý rukáv, tričko → tunika)
-   a výsledky zapísať do Zistení.
+1. Otestovať na Kaggle ochranu rúk a predĺženie pre dlhý vrch (~10 fotiek
+   s rukami pri tele; krátky ↔ dlhý rukáv, tričko → tunika) a výsledky zapísať
+   do Zistení.
 2. Ručný prepínač rukávov a dĺžky (auto / …) v UI, ak sa CLIP často mýli.
 3. Ručná úprava masky v UI (štetec) – CatVTON vlastnú masku podporuje.
 4. Riešenie rozmazania pri veľkých fotkách (nezväčšovať výsledok / voľba
