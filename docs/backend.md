@@ -1,6 +1,6 @@
 # Backend – CatVTON (`src/try_on.py`)
 
-Stav k 2026-11-06. Popisuje, ako funguje generovanie, prečo je spravené tak,
+Stav k 2026-11-09. Popisuje, ako funguje generovanie, prečo je spravené tak,
 ako je, a čo sme zistili pri testovaní.
 
 ## Prehľad
@@ -13,9 +13,10 @@ src/try_on.py: try_on()
    1. predspracovanie   – osoba: výrez 3:4 + zmena na 768×1024
                           oblečenie: doplnenie bielym okrajom na 768×1024
    2. nové oblečenie    – CLIP z fotky oblečenia: rukáv (upper / overall),
-                          dĺžka vrchu (upper)
+                          dĺžka vrchu (upper), dĺžka šiat (overall)
    3. maska             – AutoMasker (DensePose + SCHP) podľa cloth_type
-   4. úprava masky      – src/masking.py: predĺženie (dlhý vrch), ochrana
+   4. úprava masky      – src/masking.py: predĺženie (dlhý vrch), tvar
+                          a dĺžka šiat (overall), ochrana
                           dlaní a pri krátkom rukáve aj holých rúk, potom
                           rozmazanie okraja (blur 9)
    5. generovanie       – CatVTONPipeline (SD 1.5 inpainting + attention váhy)
@@ -159,6 +160,22 @@ história je v gite (commity `a561a6b`–`34ee6f7`). Poučenie: **maska má byť
 zlepšenie, preto bol odstránený z UI aj backendu (commit `37331f7` ho
 pridal). Dĺžka vrchu (CLIP) ostáva.
 
+**Šaty na mužovi → nohavice a čierny kardigán (2026-11-09).** Muž vo svetri
+s dlhým rukávom a džínsoch + krátke červené šaty na ramienka (`overall`).
+Výsledok: z šiat vznikol **overal s nohavicami** a navrch **tmavý kardigán
+s dlhým rukávom**. Príčina je maska, nie šaty:
+
+- AutoMasker pre `overall` zakryl jednu veľkú plochu od ramien **po členky**
+  vrátane priestoru medzi rukami a telom (silueta dlhého kabáta),
+- CatVTON vyplní celú masku oblečením a z okraja masky číta strih → krátke
+  šaty natiahol na nohavice, „kabátovú“ plochu a ruky vyplnil kardigánom,
+- pri dlaniach ostali manžety svetra (roztiahnutá ochrana dlaní) → nápoveda
+  „tu pokračuje rukáv“; holá koža rúk nebola, takže `protect_arms` nepomohol.
+
+Oprava: maska šiat podľa dĺžky a tvaru tela (sekcia nižšie). Obmedzenie
+modelu ostáva: holé ruky namiesto dlhého rukáva (a nohy namiesto nohavíc)
+model nevytvorí spoľahlivo – na šaty je vhodná fotka v tričku / tielku.
+
 **Možné rozmazanie pri veľkých fotkách.** Výsledok vzniká v 768×1024 a pri
 vložení späť do veľkej fotky (napr. 3000×4000) sa zväčšuje. Pri zapnutom
 `paste_face` je okolie ostrý originál, takže rozdiel je viditeľný. Zatiaľ
@@ -259,11 +276,56 @@ Posuvník šírky masky bol skúšaný a odstránený – pozri Zistenia.
 - Predĺženie je obdĺžnik – pri tunike cez nohavice sa prekreslí aj časť
   nohavíc a pozadia (zámerne, model tam nakreslí tuniku alebo pozadie).
 
+## Maska pre šaty (`overall`)
+
+_Stav: **implementované 2026-11-09, čaká na test na Kaggle.**_
+
+**Problém.** Pozri Zistenia „Šaty na mužovi“ – maska AutoMaskera po členky
+a so siluetou kabáta → nohavice a kardigán namiesto krátkych šiat.
+
+**1. Dĺžka šiat – CLIP.** `DRESS_LENGTH_PROMPTS` v `src/try_on.py`:
+`mini` / `knee` / `midi` / `maxi`. Pri istote < 0,4
+(`DRESS_LENGTH_MIN_CONFIDENCE`, 4 triedy) sa použije `knee`
+(`DRESS_LENGTH_FALLBACK`). Voľba `length="mini"` atď. obíde CLIP.
+
+**2. Lem podľa DensePose** (`masking._dress_shape`, `DRESS_HEM`): bok = spodok
+trupu, koleno = vrch lýtok, členok = spodok lýtok.
+
+| dĺžka | lem |
+|---|---|
+| mini | bok + 60 % stehna |
+| knee | koleno + 10 % lýtka |
+| midi | koleno + 50 % lýtka |
+| maxi | bez rezu |
+
+\+ rezerva 5 % výšky trupu. Pod lemom maska končí → nohy (aj nohavice)
+ostanú z pôvodnej fotky. Ak DensePose nenájde nohy, dĺžka sa nemení.
+
+**3. Tvar tela.** Maska AutoMaskera sa oreže na povolenú oblasť:
+DensePose trup + ruky + nohy roztiahnuté o ~25 px (`DRESS_BODY_DIVISOR`)
+\+ obdĺžnik sukne od ¾ trupu po lem, širší o 25 % šírky trupu na každú stranu
+(`DRESS_SKIRT_MARGIN`, priestor pre áčkový strih). Masku len zmenšuje, nikdy
+nepridáva.
+
+**4. Ochrana dlaní pri odhalených rukách.** Ak má nové oblečenie krátky rukáv /
+je bez rukávov, chránená oblasť sa roztiahne len o 1 iteráciu (inak 2) – aby
+pri dlani neostala manžeta pôvodného rukáva.
+
+**Výstup v `info`:** `"length": "mini (0.62, clip)"`,
+`"mask_changes": "šaty: mini"`.
+
+**Riziká / overiť na Kaggle.**
+
+- Tesnejšia maska môže „stiahnuť“ šaty k telu (poučenie zo Sapiens) – ak áno,
+  zväčšiť `DRESS_BODY_DIVISOR` / `DRESS_SKIRT_MARGIN`.
+- CLIP pri dĺžke šiat – istota v `info`.
+- Pôvodné voľné oblečenie mimo roztiahnutého tela (široký kabát) ostane.
+
 ## Plánované vylepšenia
 
 1. Otestovať na Kaggle ochranu rúk a predĺženie pre dlhý vrch (~10 fotiek
-   s rukami pri tele; krátky ↔ dlhý rukáv, tričko → tunika) a výsledky zapísať
-   do Zistení.
+   s rukami pri tele; krátky ↔ dlhý rukáv, tričko → tunika) a masku pre šaty
+   (mini / po kolená / maxi, muž aj žena) a výsledky zapísať do Zistení.
 2. Ručný prepínač rukávov a dĺžky (auto / …) v UI, ak sa CLIP často mýli.
 3. Ručná úprava masky v UI (štetec) – CatVTON vlastnú masku podporuje.
 4. Riešenie rozmazania pri veľkých fotkách (nezväčšovať výsledok / voľba

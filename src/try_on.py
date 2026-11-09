@@ -9,12 +9,14 @@ Kontrakt (používa ho app.py a API /try_on):
                             guidance_scale (float, voliteľné),
                             sleeves ("auto" | "short" | "long" | "sleeveless",
                             voliteľné – ručné určenie rukávov namiesto CLIP),
-                            length ("auto" | "cropped" | "regular" | "long",
-                            voliteľné – ručné určenie dĺžky vrchu namiesto CLIP)
+                            length ("auto" | "cropped" | "regular" | "long" pre vrch,
+                            "mini" | "knee" | "midi" | "maxi" pre šaty,
+                            voliteľné – ručné určenie dĺžky namiesto CLIP)
 
 Maska: AutoMasker z CatVTON (DensePose + SCHP), upravená v src/masking.py podľa
 nového oblečenia (CLIP): dlhý vrch → maska siaha nižšie; krátky rukáv / bez
-rukávov → holé ruky sa chránia; dlane sa chránia vždy.
+rukávov → holé ruky sa chránia; dlane sa chránia vždy; šaty (overall) →
+maska končí pri leme podľa dĺžky šiat a drží sa tvaru tela.
 
 Model sa načíta raz pri importe. Bez CUDA import zlyhá a app.py sa prepne
 do DEMO režimu. Kód CatVTON nie je v repe – očakáva sa naklonovaný v adresári
@@ -58,6 +60,14 @@ LENGTH_PROMPTS = {                            # dĺžka vrchu
     "long": "a product photo of a long top, tunic, long sweater or coat that covers the hips",
 }
 LENGTH_MIN_CONFIDENCE = 0.6                   # pod touto istotou sa maska nepredĺži
+DRESS_LENGTH_PROMPTS = {                      # dĺžka šiat (overall)
+    "mini": "a product photo of a short mini dress that ends mid-thigh",
+    "knee": "a product photo of a knee-length dress",
+    "midi": "a product photo of a midi dress that ends at the calf",
+    "maxi": "a product photo of a long maxi dress or jumpsuit that reaches the ankles",
+}
+DRESS_LENGTH_MIN_CONFIDENCE = 0.4             # 4 triedy; pod touto istotou → DRESS_LENGTH_FALLBACK
+DRESS_LENGTH_FALLBACK = "knee"
 
 
 def _find_catvton_dir() -> Path:
@@ -205,13 +215,17 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
     person_r = resize_and_crop(person, (WIDTH, HEIGHT))
     cloth_r = resize_and_padding(cloth, (WIDTH, HEIGHT))
 
-    # 1) Nové oblečenie (CLIP): rukáv pre vrch aj celé, dĺžka len pre vrch
+    # 1) Nové oblečenie (CLIP): rukáv pre vrch aj celé, dĺžka pre vrch aj šaty
     sleeves, s_conf, s_src = (None, 0.0, "-")
     length, l_conf, l_src = (None, 0.0, "-")
     if cloth_type in ("upper", "overall"):
         sleeves, s_conf, s_src = _classify(cloth_r, SLEEVE_PROMPTS, options.get("sleeves", "auto"))
     if cloth_type == "upper":
         length, l_conf, l_src = _classify(cloth_r, LENGTH_PROMPTS, options.get("length", "auto"))
+    dress_length = None
+    if cloth_type == "overall":
+        length, l_conf, l_src = _classify(cloth_r, DRESS_LENGTH_PROMPTS, options.get("length", "auto"))
+        dress_length = length if l_conf >= DRESS_LENGTH_MIN_CONFIDENCE else DRESS_LENGTH_FALLBACK
 
     # 2) Maska AutoMaskera + úpravy (predĺženie, ochrana rúk)
     masker_out = _automasker(person_r, cloth_type)
@@ -220,7 +234,8 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
         masker_out,
         cloth_type,
         protect_arms=sleeves in ("short", "sleeveless") and s_conf >= SLEEVE_MIN_CONFIDENCE,
-        long_garment=length == "long" and l_conf >= LENGTH_MIN_CONFIDENCE,
+        long_garment=cloth_type == "upper" and length == "long" and l_conf >= LENGTH_MIN_CONFIDENCE,
+        dress_length=dress_length,
     )
     mask_soft = _mask_processor.blur(mask, blur_factor=MASK_BLUR)
 
