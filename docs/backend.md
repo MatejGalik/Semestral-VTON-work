@@ -1,6 +1,6 @@
 # Backend – CatVTON (`src/try_on.py`)
 
-Stav k 2026-11-09. Popisuje, ako funguje generovanie, prečo je spravené tak,
+Stav k 2026-11-12. Popisuje, ako funguje generovanie, prečo je spravené tak,
 ako je, a čo sme zistili pri testovaní.
 
 ## Prehľad
@@ -25,6 +25,93 @@ src/try_on.py: try_on()
    ▼
 {"result": PIL.Image, "mask": PIL.Image, "info": dict}
 ```
+
+## Kroky: algoritmus vs. AI model
+
+V projekte **nie je žiadne LLM**. Používame modely na obraz (CLIP, DensePose,
+SCHP, difúzny model). 🟢 = klasický algoritmus, 🔵 = natrénovaný AI model.
+
+| # | Krok | Typ | Dá sa bez AI? |
+|---|---|---|---|
+| 1 | Predspracovanie | 🟢 | už je |
+| 2 | Rukáv a dĺžka nového oblečenia (CLIP) | 🔵 | áno, silueta oblečenia (len na čistom pozadí) |
+| 3a | Póza / časti tela (DensePose) | 🔵 | nie |
+| 3b | Segmentácia (SCHP) | 🔵 | prakticky nie |
+| 3c | Zloženie masky (AutoMasker) | 🟢 | už je |
+| 4 | Úprava masky (`src/masking.py`) | 🟢 | už je |
+| 5 | Generovanie (CatVTON) | 🔵 | nie, bez AI len zdeformovaná „nálepka“ |
+| 6 | `paste_face` | 🟢 | už je |
+| 7 | Späť do pôvodného rozmeru | 🟢 | už je |
+
+**1. Predspracovanie 🟢** (`resize_and_crop`, `resize_and_padding` z CatVTON)
+- Osoba: zo stredu fotky sa vyreže časť s pomerom 3:4 (`_crop_box`) a zmenší
+  sa na 768×1024, na takom rozlíšení bol model trénovaný.
+- Oblečenie: zmenší sa tak, aby sa celé zmestilo do 768×1024, a zvyšok sa
+  doplní bielym okrajom, takže sa z oblečenia nič neodreže.
+
+**2. Rukáv a dĺžka nového oblečenia 🔵** (`_clip_classify`)
+- CLIP (`clip-vit-base-patch32`) prevedie obrázok aj textové popisy na vektory
+  (embeddingy) a porovná ich podobnosť. Ide o zero-shot klasifikáciu: model sa
+  na našich dátach netrénoval, triedy sú zadané len textom.
+- Popisy tried: rukáv `short` / `long` / `sleeveless`, dĺžka vrchu `cropped` /
+  `regular` / `long`, dĺžka šiat `mini` / `knee` / `midi` / `maxi`.
+- Softmax nad podobnosťami určí víťaznú triedu a jej istotu. Pod prahom (0,6;
+  pri šatách 0,4) sa úprava masky nepoužije, šaty dostanú `knee`.
+- *Bez AI:* oddeliť oblečenie od bieleho pozadia prahom, z masky siluety
+  spočítať šírku po riadkoch (rukávy = široké „ramená“) a pomer výška/šírka
+  (dĺžka). Na fotke s rušným pozadím alebo oblečenia na človeku zlyhá.
+
+**3a. Póza / časti tela 🔵** (DensePose, v AutoMaskeri)
+- Neurónová sieť priradí každému pixelu osoby časť tela (trup, nadlaktie,
+  predlaktie, dlaň, stehno, lýtko…), spolu 24 častí.
+- Z tejto mapy sa určí, kde je telo, aj keď ho zakrýva oblečenie.
+
+**3b. Segmentácia 🔵** (SCHP, modely LIP a ATR, v AutoMaskeri)
+- Neurónová sieť označí každý pixel triedou: vrch, nohavice, šaty, koža rúk,
+  tvár, vlasy, topánky…
+- Vie, čo je teraz *oblečené*, čo je holá koža a čo sa nesmie meniť (tvár,
+  vlasy).
+
+**3c. Zloženie masky 🟢** (AutoMasker, `cloth_masker.py` v CatVTON)
+- Pravidlá nad mapami 3a a 3b: podľa `cloth_type` sa vyberú oblasti na
+  prekreslenie (`upper`: trup a ruky; `lower`: nohy; `overall`: oboje).
+- Chránené oblasti (tvár, vlasy, a pri `upper` aj nohy) sa z masky vyrežú.
+- Maska sa roztiahne (dilatácia) a vyplnia sa v nej diery. Je zámerne široká,
+  aby model mohol nakresliť iný strih.
+
+**4. Úprava masky 🟢** (`src/masking.py: adjust_mask`)
+- Dlhý vrch: pod trupom (ohraničujúci obdĺžnik trupu z DensePose) sa pridá
+  obdĺžnik, ktorý siaha o 35 % výšky trupu nižšie a o 15 % širšie.
+- Šaty: lem sa vypočíta z bodov DensePose (bok → koleno → členok) podľa dĺžky
+  šiat. Maska sa oreže na roztiahnuté telo plus obdĺžnik sukne od pása po lem.
+- Ochrana rúk: dlane (DensePose ∩ koža zo SCHP) sa vyrežú vždy. Pri krátkom
+  rukáve alebo bez rukávov sa vyreže aj všetka holá koža rúk.
+- Nakoniec rozmazanie okraja (blur 9), aby nebol vidieť ostrý prechod.
+- Použité operácie: prieniky a zjednotenia binárnych máp (numpy), dilatácia
+  (OpenCV), ohraničujúce obdĺžniky.
+
+**5. Generovanie 🔵** (`CatVTONPipeline`)
+- Difúzny model: SD 1.5 inpainting UNet s dotrénovanými attention váhami
+  CatVTON. Textový vstup (prompt) sa nepoužíva.
+- Fotka osoby so zakrytou maskou a fotka oblečenia sa spoja **vedľa seba**
+  (concat) a VAE ich zakóduje do latentného priestoru.
+- Model postupne (`steps` krokov) odšumuje oblasť masky. Cez self-attention
+  „kuká“ na oblečenie vedľa a prenáša jeho vzor, farbu a strih na telo
+  (záhyby, tiene, póza).
+- `guidance_scale` 2,5 určuje, ako silno sa výsledok drží oblečenia.
+  `seed` zaručí opakovateľnosť.
+- *Bez AI:* TPS deformácia (warp) fotky oblečenia podľa bodov tela a vloženie
+  na osobu, ako pri starších metódach. Výsledok nemá záhyby, tiene ani
+  prekrytie rukami.
+
+**6. `paste_face` 🟢** (`repaint_result`)
+- Alfa zmes: `výsledok × maska + originál × (1 − maska)` s rozmazanou maskou.
+- Mimo masky ostanú pôvodné pixely (tvár, pozadie, chránené ruky), takže sa
+  nestratí ostrosť a nezmenia sa detaily.
+
+**7. Späť do pôvodného rozmeru 🟢** (`_paste_back`)
+- Výsledok 768×1024 sa zväčší na veľkosť výrezu z kroku 1 (LANCZOS) a vloží
+  sa späť do pôvodnej fotky. Rovnako sa spracuje maska pre UI.
 
 ## Kontrakt
 
@@ -77,7 +164,7 @@ zaseknuté. Po načítaní sa vypíše `CatVTON pripravený za … s (GPU, dtype
 
 | Rozhodnutie | Prečo |
 |---|---|
-| Kód CatVTON sa neprepisuje ani nekopíruje do repa, klonuje sa za behu | menej kódu na údržbu, jednoduchá aktualizácia |
+| Kód CatVTON sa neprepisuje ani nekopíruje do repa, klonuje sa za behu z **HF Space `zhengchong/CatVTON`** | menej kódu na údržbu; GitHub repo `Zheng-Chong/CatVTON` bolo zmazané (pozri „Zistenia z testovania“) |
 | Váhy `mix-48k-1024` | univerzálne (vrch, spodok, šaty), rozlíšenie 768×1024 |
 | Pevné rozlíšenie 768×1024 | na tom bol model trénovaný |
 | **fp16 na T4/P100**, bf16 len pri compute capability ≥ 8 | pozri „OOM na T4“ nižšie |
@@ -100,6 +187,15 @@ zaseknuté. Po načítaní sa vypíše `CatVTON pripravený za … s (GPU, dtype
   nepoužíva a import je ošetrený).
 
 ## Zistenia z testovania
+
+**GitHub repo CatVTON zmazané (opravené 2026-11-12).** Bunka 3 notebooku
+padla na `git clone` s hláškou `could not read Username for 'https://github.com'`.
+To GitHub vypíše pri neexistujúcom repe: `Zheng-Chong/CatVTON` už nie je
+dostupné. Rovnaký kód (`model/pipeline.py`, `model/cloth_masker.py`,
+`utils.py`, rovnaké API) je v HF Space `zhengchong/CatVTON`. Notebook klonuje
+odtiaľ, s `GIT_LFS_SKIP_SMUDGE=1` (bez ukážkových obrázkov) a
+`GIT_TERMINAL_PROMPT=0` (chyba namiesto čakania na meno). Váhy
+(HF model `zhengchong/CatVTON`) to neovplyvnilo.
 
 **OOM na T4 (opravené).** Prvá verzia chcela alokovať 36 GB VRAM.
 `torch.cuda.is_bf16_supported()` vracia `True` aj na T4 (bf16 len emuluje),

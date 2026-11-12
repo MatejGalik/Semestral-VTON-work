@@ -78,7 +78,7 @@ def _find_catvton_dir() -> Path:
         if c and (Path(c) / "model" / "pipeline.py").is_file():
             return Path(c).resolve()
     raise RuntimeError(
-        "Kód CatVTON sa nenašiel. Naklonuj https://github.com/Zheng-Chong/CatVTON "
+        "Kód CatVTON sa nenašiel. Naklonuj https://huggingface.co/spaces/zhengchong/CatVTON "
         "a nastav CATVTON_DIR (skúšané: %s)." % ", ".join(map(str, candidates))
     )
 

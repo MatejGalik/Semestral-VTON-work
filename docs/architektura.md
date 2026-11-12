@@ -1,6 +1,6 @@
 # Architektúra a technológie
 
-Stav k 2026-11-06. Celkový pohľad na projekt: z čoho sa skladá, aké technológie
+Stav k 2026-11-12. Celkový pohľad na projekt: z čoho sa skladá, aké technológie
 používa, ako sa spúšťa a ako sa na ňom pracuje. Podrobnosti o modeli sú
 v [backend.md](backend.md).
 
@@ -113,7 +113,7 @@ Príklad volania cez `gradio_client` je v [README](../README.md#api).
 1. Nastavenia      repo, vetva, PREFETCH_WEIGHTS
 2. GPU             nvidia-smi
 3. kód projektu    git clone, pri opakovanom behu len aktualizácia na origin/<vetva>
-4. CatVTON         git clone kódu + CATVTON_DIR
+4. CatVTON         git clone kódu z HF Space zhengchong/CatVTON + CATVTON_DIR
 5. závislosti      pip install requirements.txt + requirements-gpu.txt
 6. váhy (HF)       CatVTON (mix-48k-1024, SCHP, DensePose)
 7. spustenie       python app.py --share → odkaz gradio.live

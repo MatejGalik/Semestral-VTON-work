@@ -110,7 +110,7 @@ notebook na Kaggle je len spúšťač, ktorý si vždy stiahne najnovšiu verziu
 `https://….gradio.live` v poslednej bunke a otvor ho.
 
 Notebook: stiahne repo (vetva v bunke Nastavenia), naklonuje
-[CatVTON](https://github.com/Zheng-Chong/CatVTON), nainštaluje
+[CatVTON](https://huggingface.co/spaces/zhengchong/CatVTON) (HF Space; GitHub repo bolo zmazané), nainštaluje
 `requirements.txt` + `requirements-gpu.txt`, stiahne váhy a spustí
 `python app.py --share`.
 
