@@ -182,7 +182,7 @@ zaseknuté. Po načítaní sa vypíše `CatVTON pripravený za … s (GPU, dtype
 - `requirements-gpu.txt` – navyše pre CatVTON: `diffusers`, `transformers`,
   `accelerate`, `huggingface_hub` a závislosti detectron2/DensePose (`fvcore`,
   `omegaconf`, `cloudpickle`, `pycocotools`, `av`).
-- detectron2 a DensePose sú **priamo v repe CatVTON**, netreba ich kompilovať.
+- detectron2 a DensePose sú **priamo v kóde CatVTON** (HF Space, pripnutý commit `c35ec9e`), netreba ich kompilovať.
   Kompilované rozšírenie `detectron2._C` nie je potrebné (DensePose R50-FPN ho
   nepoužíva a import je ošetrený).
 
@@ -196,6 +196,15 @@ dostupné. Rovnaký kód (`model/pipeline.py`, `model/cloth_masker.py`,
 odtiaľ, s `GIT_LFS_SKIP_SMUDGE=1` (bez ukážkových obrázkov) a
 `GIT_TERMINAL_PROMPT=0` (chyba namiesto čakania na meno). Váhy
 (HF model `zhengchong/CatVTON`) to neovplyvnilo.
+
+**Space bez detectron2 → DEMO režim (opravené 2026-11-12).** Po prechode na
+Space backend padol na `No module named 'detectron2'`. Najnovší commit Space
+(`24a6952`, „Admin maintenance“) zmazal pribalený `detectron2/` a inštaluje ho
+kompiláciou z GitHubu. Notebook preto sťahuje **pripnutý commit `c35ec9e`**
+(`CATVTON_COMMIT`), ktorý `detectron2/` ešte má; kód `model/` a `utils.py` má
+rovnaké API. Ak by commit zmizol, náhrada je
+`pip install --no-build-isolation --no-deps git+https://github.com/facebookresearch/detectron2.git`
+(kompilácia ~5–10 min).
 
 **OOM na T4 (opravené).** Prvá verzia chcela alokovať 36 GB VRAM.
 `torch.cuda.is_bf16_supported()` vracia `True` aj na T4 (bf16 len emuluje),

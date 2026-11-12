@@ -113,7 +113,7 @@ Príklad volania cez `gradio_client` je v [README](../README.md#api).
 1. Nastavenia      repo, vetva, PREFETCH_WEIGHTS
 2. GPU             nvidia-smi
 3. kód projektu    git clone, pri opakovanom behu len aktualizácia na origin/<vetva>
-4. CatVTON         git clone kódu z HF Space zhengchong/CatVTON + CATVTON_DIR
+4. CatVTON         kód z HF Space zhengchong/CatVTON (pripnutý commit) + CATVTON_DIR
 5. závislosti      pip install requirements.txt + requirements-gpu.txt
 6. váhy (HF)       CatVTON (mix-48k-1024, SCHP, DensePose)
 7. spustenie       python app.py --share → odkaz gradio.live
