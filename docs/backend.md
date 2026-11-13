@@ -89,9 +89,9 @@ SCHP, difúzny model). 🟢 = klasický algoritmus, 🔵 = natrénovaný AI mode
   šiat. Maska sa oreže na roztiahnuté telo plus obdĺžnik sukne od pása po lem.
 - Ochrana rúk: dlane (DensePose ∩ koža zo SCHP) sa vyrežú vždy. Pri krátkom
   rukáve alebo bez rukávov sa vyreže aj všetka holá koža rúk.
-- Nohavice: podľa profilu šírky zmeraného z fotky nohavíc (krok 2b) sa ku
-  každej nohe pridá pás okolo stredovej čiary nohy z DensePose; maska sa len
-  rozširuje. Pozri „Rozšírenie masky podľa strihu nohavíc“.
+- Nohavice: profil šírky z fotky nohavíc (krok 2b) sa porovná s profilom
+  pôvodných nohavíc na osobe (SCHP); o rozdiel sa vonkajšie okraje masky
+  posunú von. Maska sa len rozširuje. Pozri „Rozšírenie masky podľa strihu nohavíc“.
 - Nakoniec rozmazanie okraja (blur 9), aby nebol vidieť ostrý prechod.
 - Použité operácie: prieniky a zjednotenia binárnych máp (numpy), dilatácia
   (OpenCV), ohraničujúce obdĺžniky.
@@ -296,6 +296,14 @@ ju pri `lower` nemenil. CatVTON kreslí len vnútri masky, mimo nej `paste_face`
 vráti pôvodné pozadie, takže širšie nohavice nemal kam nakresliť. Oprava:
 sekcia „Rozšírenie masky podľa strihu nohavíc“.
 
+**Rozšírenie nohavíc – 1. test na Kaggle (2026-11-13).** Tie isté baggy
+tepláky, seed 42: `fit` = široké (0.55 / 0.55), ale `mask_changes` = `-`.
+Maska AutoMaskera pre `lower` je rovný stĺpec od bokov po členky (konvexný
+obal pôvodných nohavíc, `mask_ratio` 0.144); model ho vyplnil celý → rovné
+nohavice. Cieľová šírka prvej verzie (od tela z DensePose) sa celá zmestila
+do stĺpca → prírastok < 3 % → bez zmeny. Oprava: rozdiel voči pôvodným
+nohaviciam (sekcia nižšie). Pozitívne zistenie: model tvar masky poslúcha.
+
 **Možné rozmazanie pri veľkých fotkách.** Výsledok vzniká v 768×1024 a pri
 vložení späť do veľkej fotky (napr. 3000×4000) sa zväčšuje. Pri zapnutom
 `paste_face` je okolie ostrý originál, takže rozdiel je viditeľný. Zatiaľ
@@ -443,7 +451,7 @@ pri dlani neostala manžeta pôvodného rukáva.
 
 ## Rozšírenie masky podľa strihu nohavíc (`lower`)
 
-_Stav: **implementované 2026-11-13, otestované lokálne (bez modelu), čaká na test na Kaggle.**_
+_Stav: **implementované 2026-11-13, 2. verzia (rozdiel voči pôvodným nohaviciam) otestovaná lokálne, čaká na test na Kaggle.**_
 
 **Problém.** Pozri Zistenia „Široké (baggy) nohavice vyšli úzke“ – maska
 AutoMaskera kopíruje pôvodné nohavice, model nemá priestor na širší strih.
@@ -472,21 +480,29 @@ fotka nohavíc
   produktová fotka nohavíc (napr. osoba, zložené nohavice) → bez zmeny masky.
   Rovnako, ak sa silueta nenájde alebo sú nohavice príliš krátke (šortky).
 
-**2. Rozšírenie masky** (`masking._widen_legs`)
+**2. Rozšírenie masky** (`masking._widen_legs`) – o **rozdiel** strihu nových
+a pôvodných nohavíc
 
-- Šírka bokov osoby = šírka oboch stehien (DensePose) v ich hornej časti.
-- Pre každú nohu zvlášť (DensePose stehno + lýtko) a každý riadok od vrchu
-  stehna po členok: stred nohy (priemer x pixelov nohy, vyhladený) ±
-  polovica cieľovej šírky = profil(výška) × šírka bokov. Strop: 80 % bokov na
-  nohu (`FIT_MAX_LEG`).
+- Pôvodné nohavice na osobe = SCHP (LIP nohavice / sukňa, ATR nohavice /
+  sukňa); ak ich niet (šaty, šortky), nohy z DensePose.
+- Na nich sa zmeria ten istý profil (`_leg_profile`: rozkrok, šírka bokov,
+  šírka nohavice / boky v každom riadku) a vonkajšie okraje nohavíc.
+- V každom riadku od rozkroku po lem sa ľavý okraj posunie doľava a pravý
+  doprava o (nový pomer − pôvodný pomer) × šírka bokov osoby; záporný rozdiel
+  = 0. Strop 40 % bokov na stranu (`FIT_MAX_EXTRA`), okraj sa vyhladí
+  (~8 % dĺžky nohy).
 - Pridá sa len to, čo nie je chránené: dlane a chodidlá (DensePose,
   roztiahnuté), vlasy, vrch, kabát, tvár, ruky, topánky (SCHP LIP aj ATR).
-- Ak prírastok plochy < 3 % (`FIT_MIN_GAIN`), maska sa nemení – pri úzkych
-  a bežných nohaviciach je správanie rovnaké ako predtým (profil je užší ako
-  maska AutoMaskera, nič sa nepridá).
+- Ak prírastok plochy < 3 % (`FIT_MIN_GAIN`), maska sa nemení. Nové
+  nohavice rovnako úzke alebo užšie ako pôvodné → rozdiel 0 → bez zmeny.
+
+_Prvá verzia (2026-11-13) počítala cieľovú šírku absolútne – od stredu nohy
+z DensePose × šírka stehien (tela). Na Kaggle sa celá zmestila do masky
+AutoMaskera (pozri Zistenia „Rozšírenie nohavíc – 1. test na Kaggle“), preto
+sa prešlo na rozdiel voči pôvodným nohaviciam._
 
 **Výstup v `info`:** `"fit": "široké (koleno 0.55, lem 0.55)"`,
-`"mask_changes": "nohavice rozšírené (+13%)"`. Voľba `fit="off"` rozšírenie
+`"mask_changes": "nohavice rozšírené (+22%)"`. Voľba `fit="off"` rozšírenie
 vypne (porovnanie pred / po s rovnakým seedom).
 
 **Lokálne overenie (2026-11-13, bez GPU).**
@@ -495,15 +511,18 @@ vypne (porovnanie pred / po s rovnakým seedom).
 - Baggy tepláky z testu vyššie: `široké (koleno 0.55, lem 0.55)`; umelé
   siluety: úzke 0,26, rovné 0,41, široké 0,57 pri leme; fotka osoby a fotka
   šiat → „nohavice sa nenašli“ (maska bez zmeny).
-- Na fotke muža v džínsoch (DensePose / SCHP nahradené ručne vyrobenými mapami)
-  pridali baggy tepláky +13 % plochy masky, úzke nohavice nič.
+- Na fotke muža v džínsoch (DensePose / SCHP nahradené ručne vyrobenými mapami,
+  maska ako rovný stĺpec ako na Kaggle) pridali baggy tepláky +22 % plochy
+  masky (rozšírenie rastie smerom k lemu), rovné +7 %, úzke nič.
 - Maska pre `upper` a `overall` je bit po bite rovnaká ako pred zmenou.
 
 **Riziká / overiť na Kaggle.**
 
 - Model nemusí širokú masku vyplniť celú (užšie nohavice + pozadie okolo).
-- Stredy nôh a boky sú z DensePose (telo bez oblečenia) – pri veľmi voľných
-  pôvodných nohaviciach môže byť šírka bokov podhodnotená.
+- Pôvodné nohavice sú zo SCHP – ak ich SCHP zle oddelí (ruky pred nohami,
+  dlhý vrch cez boky), profil pôvodných nohavíc môže byť nepresný.
+- Na fotke nohavíc je pomer šírok z rozloženého kusu, na osobe z pohľadu
+  spredu – nie je to to isté, rozdiel je len odhad.
 - Silueta predpokladá jednoliate pozadie produktovej fotky; pri rušnom
   pozadí analýza vráti „nenašli“ alebo nepresný profil.
 - Dĺžka nohavíc sa nemení (lem = členok podľa DensePose, topánky chránené).

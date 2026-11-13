@@ -5,8 +5,9 @@ Postup (adjust_mask):
 1b. šaty        – `overall`: maska skončí pri leme podľa dĺžky šiat a zúži sa
                   na telo (bez „kabátovej“ siluety AutoMaskera)
 2. ochrana      – vyreže dlane, pri krátkom rukáve / bez rukávov aj holé ruky
-3. nohavice     – `lower`: podľa strihu z fotky nohavíc (analyze_pants) sa
-                  maska každej nohy rozšíri; maska AutoMaskera sa nikdy nezužuje
+3. nohavice     – `lower`: ak sú nové nohavice (analyze_pants) širšie ako
+                  pôvodné na osobe, maska sa smerom von rozšíri o rozdiel;
+                  maska AutoMaskera sa nikdy nezužuje
 
 Modul neimportuje kód CatVTON – mapy tried mu odovzdáva src/try_on.py.
 Masky sú PIL "L" 768×1024 (0 / 255), ešte bez rozmazania okraja.
@@ -46,11 +47,13 @@ DENSEPOSE_FEET = (5, 6)
 DENSEPOSE_LEGS = ((7, 9, 11, 13), (8, 10, 12, 14))   # pravá / ľavá noha: stehno + lýtko
 SCHP_LIP_KEEP = (2, 3, 5, 7, 13, 14, 15, 18, 19)      # vlasy, rukavice, vrch, kabát, tvár, ruky, topánky
 SCHP_ATR_KEEP = (2, 4, 9, 10, 11, 14, 15, 16)         # vlasy, vrch, topánky, tvár, ruky, taška
+SCHP_LIP_PANTS = (9, 12)              # pôvodné nohavice / sukňa na osobe
+SCHP_ATR_PANTS = (5, 6)
 FIT_BG_TOLERANCE = 30                 # silueta: min. rozdiel farby od pozadia (0–255)
 FIT_WAIST_ROWS = 0.06                 # horných 6 % siluety (pás) sa pri šírke bokov preskočí
 FIT_DEFAULT_CROTCH = 0.35             # rozkrok, ak sa nohavice na fotke nerozdelia (podiel výšky)
 FIT_SAMPLES = 20                      # počet bodov profilu šírky (rozkrok → lem)
-FIT_MAX_LEG = 0.8                     # strop: noha max. 80 % šírky bokov
+FIT_MAX_EXTRA = 0.4                   # strop: okraj sa posunie max. o 40 % šírky bokov na stranu
 FIT_MAX_PROFILE = 0.9                 # nohavica širšia ako 90 % bokov → nevierohodné
 FIT_MAX_JUMP = 0.2                    # skok šírky medzi susednými bodmi profilu → nevierohodné
 FIT_MIN_GAIN = 0.03                   # pod +3 % plochy masky sa maska nemení
@@ -123,20 +126,60 @@ def _dress_shape(m: np.ndarray, densepose: np.ndarray, length: str | None) -> st
     return f"šaty: {length or '?'}" + ("" if hem < h else " (bez rezu)")
 
 
-def _runs(row: np.ndarray) -> list[int]:
-    """Dĺžky súvislých úsekov True v riadku (napr. dve nohavice vedľa seba)."""
+def _runs(row: np.ndarray) -> list[tuple[int, int]]:
+    """Súvislé úseky True v riadku ako (začiatok, dĺžka) – napr. dve nohavice vedľa seba."""
     d = np.diff(np.concatenate(([0], row.astype(np.int8), [0])))
-    return list(np.nonzero(d == -1)[0] - np.nonzero(d == 1)[0])
+    starts, ends = np.nonzero(d == 1)[0], np.nonzero(d == -1)[0]
+    return list(zip(starts, ends - starts))
+
+
+def _leg_profile(fg: np.ndarray) -> dict | None:
+    """Profil nohavíc zo siluety (fotka nohavíc aj nohavice na osobe zo SCHP).
+
+    rozkrok = prvý riadok, kde sa silueta rozdelí na dve nohavice,
+    boky = najširší riadok medzi pásom a rozkrokom (pás býva stiahnutý gumou),
+    pre každý riadok od rozkroku po lem: šírka jednej nohavice / boky
+    a vonkajšie okraje siluety (vľavo, vpravo).
+    """
+    ys = np.nonzero(fg.any(axis=1))[0]
+    if ys.size < 50:
+        return None
+    top, bottom = int(ys.min()), int(ys.max())
+    height = bottom - top + 1
+    min_run = 0.05 * float(np.ptp(np.nonzero(fg.any(axis=0))[0]) + 1)  # ignoruj úzke výbežky
+    split = [y for y in range(top + int(0.15 * height), bottom + 1)
+             if len([r for r in _runs(fg[y]) if r[1] >= min_run]) >= 2]
+    crotch = split[0] if split else top + int(FIT_DEFAULT_CROTCH * height)
+    if bottom - crotch < 0.3 * height:
+        return None                   # príliš krátke (sukňa, šortky)
+    hip = float(max(sum(r[1] for r in _runs(fg[y])) for y in range(top + int(FIT_WAIST_ROWS * height), crotch)))
+
+    rows = np.arange(crotch, bottom + 1)
+    widths, left, right = [], [], []
+    for y in rows:
+        r = sorted((x for x in _runs(fg[y]) if x[1] >= min_run), key=lambda x: -x[1])
+        widths.append(np.mean([x[1] for x in r[:2]]) if len(r) >= 2 else (r[0][1] / 2 if r else np.nan))
+        left.append(min(x[0] for x in r) if r else np.nan)
+        right.append(max(x[0] + x[1] for x in r) if r else np.nan)
+    return {"top": top, "crotch": crotch, "bottom": bottom, "hip": hip, "rows": rows,
+            "ratio": np.array(widths) / hip, "left": np.array(left, float), "right": np.array(right, float)}
+
+
+def _fill_nan(a: np.ndarray) -> np.ndarray:
+    ok = ~np.isnan(a)
+    return np.interp(np.arange(a.size), np.nonzero(ok)[0], a[ok]) if ok.any() else a
+
+
+def _smooth(a: np.ndarray, n: int) -> np.ndarray:
+    return np.convolve(np.pad(a, n // 2, mode="edge"), np.ones(n) / n, mode="valid")
 
 
 def analyze_pants(cloth: Image.Image) -> dict | None:
     """Strih nohavíc z produktovej fotky – len spracovanie obrazu, žiadny model.
 
     1. silueta: pixely, ktoré sa farbou líšia od pozadia (medián okraja fotky),
-    2. rozkrok = prvý riadok, kde sa silueta rozdelí na dve nohavice,
-    3. šírka bokov = najširší riadok medzi pásom a rozkrokom,
-    4. profil: šírka jednej nohavice / šírka bokov v FIT_SAMPLES bodoch od
-       rozkroku po lem (0 = rozkrok, 1 = lem).
+    2. profil (_leg_profile): šírka jednej nohavice / šírka bokov
+       v FIT_SAMPLES bodoch od rozkroku (0) po lem (1).
     Vráti {"profile", "knee", "hem", "label"} alebo None, ak nohavice nenájde.
     """
     img = np.asarray(cloth.convert("RGB")).astype(np.int16)
@@ -150,32 +193,17 @@ def analyze_pants(cloth: Image.Image) -> dict | None:
     if n < 2:
         return None
     fg = labels == 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
-    ys = np.nonzero(fg.any(axis=1))[0]
-    top, bottom = int(ys.min()), int(ys.max())
-    height = bottom - top + 1
-    if height < 50 or fg.sum() < 0.02 * h * w:
+    if fg.sum() < 0.02 * h * w:
         return None                   # príliš malá silueta
+    leg = _leg_profile(fg)
+    if leg is None:
+        return None
 
-    min_run = 0.05 * float(np.ptp(np.nonzero(fg.any(axis=0))[0]) + 1)   # ignoruj úzke výbežky (šnúrky)
-    split = [y for y in range(top + int(0.15 * height), bottom + 1)
-             if len([r for r in _runs(fg[y]) if r >= min_run]) >= 2]
-    crotch = split[0] if split else top + int(FIT_DEFAULT_CROTCH * height)
-    if bottom - crotch < 0.3 * height:
-        return None                   # nohavice príliš krátke (napr. sukňa, šortky)
-    # Šírka bokov nohavíc = najširší riadok nad rozkrokom (pás býva stiahnutý
-    # gumou alebo na fotke zakrivený, preto nie samotný pás)
-    hip = float(max(sum(_runs(fg[y])) for y in range(top + int(FIT_WAIST_ROWS * height), crotch)))
-
-    rows = np.arange(crotch, bottom + 1)
-    widths = []
-    for y in rows:
-        r = sorted((x for x in _runs(fg[y]) if x >= min_run), reverse=True)
-        widths.append(np.mean(r[:2]) if len(r) >= 2 else (r[0] / 2 if r else np.nan))
-    widths = np.array(widths) / hip
-    s = (rows - crotch) / max(1, bottom - crotch)
+    s = (leg["rows"] - leg["crotch"]) / max(1, leg["bottom"] - leg["crotch"])
     grid = np.linspace(0, 1, FIT_SAMPLES)
     bins = np.minimum((s * FIT_SAMPLES).astype(int), FIT_SAMPLES - 1)
-    profile = np.array([np.nanmedian(widths[bins == i]) if np.any((bins == i) & ~np.isnan(widths))
+    ratio = leg["ratio"]
+    profile = np.array([np.nanmedian(ratio[bins == i]) if np.any((bins == i) & ~np.isnan(ratio))
                         else np.nan for i in range(FIT_SAMPLES)])
     ok = ~np.isnan(profile)
     if ok.sum() < FIT_SAMPLES // 2:
@@ -185,7 +213,7 @@ def analyze_pants(cloth: Image.Image) -> dict | None:
     # nie je to produktová fotka nohavíc (napr. osoba, zložené nohavice)
     if profile.max() > FIT_MAX_PROFILE or np.abs(np.diff(profile)).max() > FIT_MAX_JUMP:
         return None
-    profile = np.convolve(np.pad(profile, 1, mode="edge"), np.ones(3) / 3, mode="valid")
+    profile = _smooth(profile, 3)
     hem = float(profile[-5:-1].mean())       # bez úplného spodku (zaoblený lem, manžeta)
     label = next(name for limit, name in FIT_LABELS if hem < limit)
     return {"profile": profile, "knee": float(profile[FIT_SAMPLES // 2]), "hem": hem, "label": label}
@@ -196,38 +224,31 @@ def describe_fit(fit: dict | None) -> str:
     return f'{fit["label"]} (koleno {fit["knee"]:.2f}, lem {fit["hem"]:.2f})' if fit else "-"
 
 
-def _widen_legs(m: np.ndarray, densepose: np.ndarray, keep: np.ndarray, fit: dict) -> float:
-    """Rozšíri masku nohavíc podľa profilu strihu. Vráti prírastok plochy (podiel).
+def _widen_legs(m: np.ndarray, old: np.ndarray, keep: np.ndarray, fit: dict) -> float:
+    """Rozšíri masku nohavíc o rozdiel strihu nových a pôvodných nohavíc.
 
-    Pre každú nohu (DensePose stehno + lýtko) a každý riadok od vrchu stehna po
-    členok: stred nohy z DensePose, šírka = profil(výška) × šírka bokov osoby.
-    Pridá sa len to, čo nie je v `keep` (ruky, vrch, topánky…); nič sa neuberá.
+    `old` = pôvodné nohavice na osobe (SCHP), prípadne nohy z DensePose.
+    Ten istý profil (_leg_profile) sa zmeria aj na nich; v každom riadku od
+    rozkroku po lem sa vonkajší okraj nohavíc posunie von o
+    (nový pomer − pôvodný pomer) × šírka bokov. Pridá sa len to, čo nie je
+    v `keep` (ruky, vrch, topánky…); nič sa neuberá. Vráti prírastok plochy.
     """
-    h, w = m.shape
-    thighs = np.isin(densepose, DENSEPOSE_THIGHS)
-    ys = np.nonzero(thighs.any(axis=1))[0]
-    if ys.size == 0:
-        return 0.0                    # DensePose nenašiel nohy
-    top_rows = thighs[ys.min(): ys.min() + max(2, int(0.15 * (ys.max() - ys.min())))]
-    xs = np.nonzero(top_rows.any(axis=0))[0]
-    hip = float(xs.max() - xs.min() + 1)  # šírka bokov = šírka oboch stehien hore
+    leg = _leg_profile(old)
+    if leg is None:
+        return 0.0
+    w = m.shape[1]
+    rows, hip = leg["rows"], leg["hip"]
+    s = (rows - leg["crotch"]) / max(1, leg["bottom"] - leg["crotch"])
+    new_ratio = np.interp(s, np.linspace(0, 1, len(fit["profile"])), fit["profile"])
+    extra = np.clip(new_ratio - _fill_nan(leg["ratio"]), 0, FIT_MAX_EXTRA) * hip
+    k = max(15, int(0.08 * len(rows)) | 1)       # vyhladenie okraja (~8 % dĺžky nohy)
+    extra = _smooth(extra, k)
+    left, right = _smooth(_fill_nan(leg["left"]), k), _smooth(_fill_nan(leg["right"]), k)
 
-    grid = np.linspace(0, 1, len(fit["profile"]))
     added = np.zeros_like(m)
-    for leg_ids in DENSEPOSE_LEGS:
-        leg = np.isin(densepose, leg_ids)
-        rows = np.nonzero(leg.any(axis=1))[0]
-        if rows.size < 10:
-            continue                  # noha nie je na fotke
-        y0, y1 = int(rows.min()), int(rows.max())
-        ys_all = np.arange(y0, y1 + 1)
-        centers = np.array([np.nonzero(leg[y])[0].mean() if leg[y].any() else np.nan for y in ys_all])
-        ok = ~np.isnan(centers)
-        centers = np.interp(ys_all, ys_all[ok], centers[ok])
-        centers = np.convolve(np.pad(centers, 7, mode="edge"), np.ones(15) / 15, mode="valid")
-        half = np.minimum(np.interp((ys_all - y0) / max(1, y1 - y0), grid, fit["profile"]), FIT_MAX_LEG) * hip / 2
-        for y, c, hw in zip(ys_all, centers, half):
-            added[y, max(0, int(c - hw)): min(w, int(c + hw) + 1)] = True
+    for y, l, r, e in zip(rows, left, right, extra):
+        if e >= 1:
+            added[y, max(0, int(l - e)): min(w, int(r + e) + 1)] = True
 
     before = m.sum()
     new = m | (added & ~keep)
@@ -267,7 +288,11 @@ def adjust_mask(
         hands = cv2.dilate(np.isin(densepose, DENSEPOSE_HANDS + DENSEPOSE_FEET).astype(np.uint8),
                            _kernel(size, 250), iterations=PROTECT_DILATE) > 0
         keep = hands | np.isin(lip, SCHP_LIP_KEEP) | np.isin(atr, SCHP_ATR_KEEP)
-        gain = _widen_legs(m, densepose, keep, pants_fit)
+        # Pôvodné nohavice na osobe (SCHP); ak ich niet (šaty, šortky…), nohy z DensePose
+        old = np.isin(lip, SCHP_LIP_PANTS) | np.isin(atr, SCHP_ATR_PANTS)
+        if old.sum() < 0.01 * old.size:
+            old = np.isin(densepose, DENSEPOSE_LEGS[0] + DENSEPOSE_LEGS[1])
+        gain = _widen_legs(m, old, keep, pants_fit)
         if not gain:
             return mask, [], changes
         changes.append(f"nohavice rozšírené (+{gain:.0%})")
