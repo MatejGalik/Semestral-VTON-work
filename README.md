@@ -130,6 +130,18 @@ poslednú bunku → **Run All**.
 Ako funguje backend, prečo je spravený tak, ako je, a čo sme zistili pri
 testovaní: [docs/backend.md](docs/backend.md).
 
+### Lokálny test analýzy strihu nohavíc
+
+Analýza strihu (`src/masking.py: analyze_pants`) nepotrebuje GPU ani model:
+
+```bash
+pip install opencv-python numpy
+python scripts/analyza_strihu.py nohavice.jpg
+```
+
+Vypíše strih (úzke / rovné / široké) a profil šírky. Podrobnosti
+v [docs/backend.md](docs/backend.md#rozšírenie-masky-podľa-strihu-nohavíc-lower).
+
 ## Použitie
 
 1. Nahraj fotku osoby (karta **Osoba**) a fotku oblečenia (karta **Produkt**),
@@ -189,7 +201,8 @@ ui/page.css           # globálne štýly stránky (vkladané do <head>)
 ui/tabs.py            # build_tryon_tab(), build_about_tab(), budúce taby
 assets/examples/      # ukážkové osoby a produkty
 src/try_on.py         # backend: CatVTON (potrebuje GPU)
-src/masking.py        # úprava masky: dĺžka vrchu, ochrana rúk
+src/masking.py        # úprava masky: dĺžka vrchu, šaty, ochrana rúk, strih nohavíc
+scripts/analyza_strihu.py  # lokálny test analýzy strihu nohavíc (bez GPU)
 requirements.txt      # závislosti UI (stačia lokálne)
 requirements-gpu.txt  # závislosti backendu (Kaggle)
 kaggle/run.ipynb      # spúšťač na Kaggle

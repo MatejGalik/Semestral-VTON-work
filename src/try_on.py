@@ -11,12 +11,15 @@ Kontrakt (používa ho app.py a API /try_on):
                             voliteľné – ručné určenie rukávov namiesto CLIP),
                             length ("auto" | "cropped" | "regular" | "long" pre vrch,
                             "mini" | "knee" | "midi" | "maxi" pre šaty,
-                            voliteľné – ručné určenie dĺžky namiesto CLIP)
+                            voliteľné – ručné určenie dĺžky namiesto CLIP),
+                            fit ("auto" | "off", voliteľné – "off" vypne
+                            rozšírenie masky podľa strihu nohavíc; na porovnanie)
 
 Maska: AutoMasker z CatVTON (DensePose + SCHP), upravená v src/masking.py podľa
 nového oblečenia (CLIP): dlhý vrch → maska siaha nižšie; krátky rukáv / bez
 rukávov → holé ruky sa chránia; dlane sa chránia vždy; šaty (overall) →
-maska končí pri leme podľa dĺžky šiat a drží sa tvaru tela.
+maska končí pri leme podľa dĺžky šiat a drží sa tvaru tela; nohavice (lower) →
+strih sa zmeria z fotky nohavíc (bez modelu) a široké nohavice rozšíria masku.
 
 Model sa načíta raz pri importe. Bez CUDA import zlyhá a app.py sa prepne
 do DEMO režimu. Kód CatVTON nie je v repe – očakáva sa naklonovaný v adresári
@@ -226,8 +229,13 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
     if cloth_type == "overall":
         length, l_conf, l_src = _classify(cloth_r, DRESS_LENGTH_PROMPTS, options.get("length", "auto"))
         dress_length = length if l_conf >= DRESS_LENGTH_MIN_CONFIDENCE else DRESS_LENGTH_FALLBACK
+    # Strih nohavíc z fotky (vlastný algoritmus, bez modelu) – z pôvodnej fotky, nie
+    # z cloth_r, aby biely okraj nemenil farbu pozadia
+    pants_fit = None
+    if cloth_type == "lower" and options.get("fit", "auto") != "off":
+        pants_fit = masking.analyze_pants(cloth)
 
-    # 2) Maska AutoMaskera + úpravy (predĺženie, ochrana rúk)
+    # 2) Maska AutoMaskera + úpravy (predĺženie, ochrana rúk, rozšírenie nohavíc)
     masker_out = _automasker(person_r, cloth_type)
     mask, protected, changes = masking.adjust_mask(
         masker_out["mask"],
@@ -236,6 +244,7 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
         protect_arms=sleeves in ("short", "sleeveless") and s_conf >= SLEEVE_MIN_CONFIDENCE,
         long_garment=cloth_type == "upper" and length == "long" and l_conf >= LENGTH_MIN_CONFIDENCE,
         dress_length=dress_length,
+        pants_fit=pants_fit,
     )
     mask_soft = _mask_processor.blur(mask, blur_factor=MASK_BLUR)
 
@@ -271,6 +280,7 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
         "mask_changes": ", ".join(changes) or "-",
         "mask_ratio": masking.mask_ratio(mask),
         "protected": ", ".join(protected) or "-",
+        "fit": masking.describe_fit(pants_fit),
         "resolution": f"{WIDTH}x{HEIGHT}",
         "device": f"{_GPU_NAME} ({str(_DTYPE).replace('torch.', '')})",
         "seconds": round(time.perf_counter() - started, 1),

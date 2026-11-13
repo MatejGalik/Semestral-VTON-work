@@ -1,6 +1,6 @@
 # Backend – CatVTON (`src/try_on.py`)
 
-Stav k 2026-11-12. Popisuje, ako funguje generovanie, prečo je spravené tak,
+Stav k 2026-11-13. Popisuje, ako funguje generovanie, prečo je spravené tak,
 ako je, a čo sme zistili pri testovaní.
 
 ## Prehľad
@@ -13,10 +13,12 @@ src/try_on.py: try_on()
    1. predspracovanie   – osoba: výrez 3:4 + zmena na 768×1024
                           oblečenie: doplnenie bielym okrajom na 768×1024
    2. nové oblečenie    – CLIP z fotky oblečenia: rukáv (upper / overall),
-                          dĺžka vrchu (upper), dĺžka šiat (overall)
+                          dĺžka vrchu (upper), dĺžka šiat (overall);
+                          strih nohavíc (lower) – vlastný algoritmus, bez modelu
    3. maska             – AutoMasker (DensePose + SCHP) podľa cloth_type
    4. úprava masky      – src/masking.py: predĺženie (dlhý vrch), tvar
-                          a dĺžka šiat (overall), ochrana
+                          a dĺžka šiat (overall), rozšírenie pre široké
+                          nohavice (lower), ochrana
                           dlaní a pri krátkom rukáve aj holých rúk, potom
                           rozmazanie okraja (blur 9)
    5. generovanie       – CatVTONPipeline (SD 1.5 inpainting + attention váhy)
@@ -35,6 +37,7 @@ SCHP, difúzny model). 🟢 = klasický algoritmus, 🔵 = natrénovaný AI mode
 |---|---|---|---|
 | 1 | Predspracovanie | 🟢 | už je |
 | 2 | Rukáv a dĺžka nového oblečenia (CLIP) | 🔵 | áno, silueta oblečenia (len na čistom pozadí) |
+| 2b | Strih nohavíc (`analyze_pants`) | 🟢 | už je |
 | 3a | Póza / časti tela (DensePose) | 🔵 | nie |
 | 3b | Segmentácia (SCHP) | 🔵 | prakticky nie |
 | 3c | Zloženie masky (AutoMasker) | 🟢 | už je |
@@ -86,6 +89,9 @@ SCHP, difúzny model). 🟢 = klasický algoritmus, 🔵 = natrénovaný AI mode
   šiat. Maska sa oreže na roztiahnuté telo plus obdĺžnik sukne od pása po lem.
 - Ochrana rúk: dlane (DensePose ∩ koža zo SCHP) sa vyrežú vždy. Pri krátkom
   rukáve alebo bez rukávov sa vyreže aj všetka holá koža rúk.
+- Nohavice: podľa profilu šírky zmeraného z fotky nohavíc (krok 2b) sa ku
+  každej nohe pridá pás okolo stredovej čiary nohy z DensePose; maska sa len
+  rozširuje. Pozri „Rozšírenie masky podľa strihu nohavíc“.
 - Nakoniec rozmazanie okraja (blur 9), aby nebol vidieť ostrý prechod.
 - Použité operácie: prieniky a zjednotenia binárnych máp (numpy), dilatácia
   (OpenCV), ohraničujúce obdĺžniky.
@@ -129,10 +135,11 @@ try_on(person_img, cloth_img, cloth_type, **options) -> dict
 | `guidance_scale` | `float` (predvolene 2.5) | voliteľné, UI ho zatiaľ neposiela |
 | `sleeves` | `"auto"` \| `"short"` \| `"long"` \| `"sleeveless"` | voliteľné, ručné určenie rukávov namiesto CLIP (na testovanie); UI ho neposiela |
 | `length` | `"auto"` \| `"cropped"` \| `"regular"` \| `"long"` | voliteľné, ručné určenie dĺžky vrchu namiesto CLIP (na testovanie); UI ho neposiela |
+| `fit` | `"auto"` \| `"off"` | voliteľné, `"off"` vypne rozšírenie masky podľa strihu nohavíc (na porovnanie pred / po); UI ho neposiela |
 
 Návrat: `result` (výsledok v pôvodnom rozmere fotky), `mask` (upravená maska
 v pôvodnom rozmere), `info` (model, kroky, seed, rozlíšenie, GPU, čas, rukávy, dĺžka,
-vykonané úpravy masky, podiel masky, chránené časti). `info` UI nezobrazuje – vypisuje sa do konzoly ako
+vykonané úpravy masky, podiel masky, chránené časti, strih nohavíc). `info` UI nezobrazuje – vypisuje sa do konzoly ako
 `try_on: {...}` (na Kaggle vo výstupe poslednej bunky).
 
 API endpoint `/try_on` v `app.py` sa týmto nemení – rozšírenie do prehliadača
@@ -281,6 +288,14 @@ Oprava: maska šiat podľa dĺžky a tvaru tela (sekcia nižšie). Obmedzenie
 modelu ostáva: holé ruky namiesto dlhého rukáva (a nohy namiesto nohavíc)
 model nevytvorí spoľahlivo – na šaty je vhodná fotka v tričku / tielku.
 
+**Široké (baggy) nohavice vyšli úzke (2026-11-13).** Muž v úzkych džínsoch
+\+ veľmi široké tepláky (`lower`). Výsledok mal správnu farbu a materiál, ale
+nohavice boli úzke ako pôvodné džínsy. Príčina: maska AutoMaskera pre `lower`
+kopíruje pôvodné nohavice (konvexný obal + roztiahnutie) a `src/masking.py`
+ju pri `lower` nemenil. CatVTON kreslí len vnútri masky, mimo nej `paste_face`
+vráti pôvodné pozadie, takže širšie nohavice nemal kam nakresliť. Oprava:
+sekcia „Rozšírenie masky podľa strihu nohavíc“.
+
 **Možné rozmazanie pri veľkých fotkách.** Výsledok vzniká v 768×1024 a pri
 vložení späť do veľkej fotky (napr. 3000×4000) sa zväčšuje. Pri zapnutom
 `paste_face` je okolie ostrý originál, takže rozdiel je viditeľný. Zatiaľ
@@ -426,11 +441,79 @@ pri dlani neostala manžeta pôvodného rukáva.
 - CLIP pri dĺžke šiat – istota v `info`.
 - Pôvodné voľné oblečenie mimo roztiahnutého tela (široký kabát) ostane.
 
+## Rozšírenie masky podľa strihu nohavíc (`lower`)
+
+_Stav: **implementované 2026-11-13, otestované lokálne (bez modelu), čaká na test na Kaggle.**_
+
+**Problém.** Pozri Zistenia „Široké (baggy) nohavice vyšli úzke“ – maska
+AutoMaskera kopíruje pôvodné nohavice, model nemá priestor na širší strih.
+
+**Riešenie – vlastný algoritmus, žiadny ďalší model.** AutoMasker beží ako
+doteraz; jeho maska sa potom len **rozšíri**, nikdy nezúži (staré nohavice
+musia ostať v maske celé, inak by ich `paste_face` vrátil).
+
+**1. Analýza strihu z fotky nohavíc** (`masking.analyze_pants`, ~10 ms)
+
+```
+fotka nohavíc
+ → silueta: pixely, ktoré sa farbou líšia od pozadia (medián okraja fotky)
+            + otvorenie / zatvorenie (OpenCV), najväčšia súvislá oblasť
+ → rozkrok: prvý riadok, kde sa silueta rozdelí na dve nohavice
+            (ak sa nerozdelí, 35 % výšky – FIT_DEFAULT_CROTCH)
+ → šírka bokov: najširší riadok medzi pásom a rozkrokom
+            (pás sa vynechá – býva stiahnutý gumou)
+ → profil: šírka jednej nohavice / šírka bokov v 20 bodoch od rozkroku po lem
+```
+
+- Strih (len do `info`): podľa šírky pri leme – `úzke` < 0,36 ≤ `rovné` <
+  0,46 ≤ `široké` (`FIT_LABELS`).
+- **Kontrola vierohodnosti:** nohavica širšia ako 90 % bokov
+  (`FIT_MAX_PROFILE`) alebo skok v profile > 0,2 (`FIT_MAX_JUMP`) → nie je to
+  produktová fotka nohavíc (napr. osoba, zložené nohavice) → bez zmeny masky.
+  Rovnako, ak sa silueta nenájde alebo sú nohavice príliš krátke (šortky).
+
+**2. Rozšírenie masky** (`masking._widen_legs`)
+
+- Šírka bokov osoby = šírka oboch stehien (DensePose) v ich hornej časti.
+- Pre každú nohu zvlášť (DensePose stehno + lýtko) a každý riadok od vrchu
+  stehna po členok: stred nohy (priemer x pixelov nohy, vyhladený) ±
+  polovica cieľovej šírky = profil(výška) × šírka bokov. Strop: 80 % bokov na
+  nohu (`FIT_MAX_LEG`).
+- Pridá sa len to, čo nie je chránené: dlane a chodidlá (DensePose,
+  roztiahnuté), vlasy, vrch, kabát, tvár, ruky, topánky (SCHP LIP aj ATR).
+- Ak prírastok plochy < 3 % (`FIT_MIN_GAIN`), maska sa nemení – pri úzkych
+  a bežných nohaviciach je správanie rovnaké ako predtým (profil je užší ako
+  maska AutoMaskera, nič sa nepridá).
+
+**Výstup v `info`:** `"fit": "široké (koleno 0.55, lem 0.55)"`,
+`"mask_changes": "nohavice rozšírené (+13%)"`. Voľba `fit="off"` rozšírenie
+vypne (porovnanie pred / po s rovnakým seedom).
+
+**Lokálne overenie (2026-11-13, bez GPU).**
+
+- `python scripts/analyza_strihu.py <fotky nohavíc>` vypíše strih a profil.
+- Baggy tepláky z testu vyššie: `široké (koleno 0.55, lem 0.55)`; umelé
+  siluety: úzke 0,26, rovné 0,41, široké 0,57 pri leme; fotka osoby a fotka
+  šiat → „nohavice sa nenašli“ (maska bez zmeny).
+- Na fotke muža v džínsoch (DensePose / SCHP nahradené ručne vyrobenými mapami)
+  pridali baggy tepláky +13 % plochy masky, úzke nohavice nič.
+- Maska pre `upper` a `overall` je bit po bite rovnaká ako pred zmenou.
+
+**Riziká / overiť na Kaggle.**
+
+- Model nemusí širokú masku vyplniť celú (užšie nohavice + pozadie okolo).
+- Stredy nôh a boky sú z DensePose (telo bez oblečenia) – pri veľmi voľných
+  pôvodných nohaviciach môže byť šírka bokov podhodnotená.
+- Silueta predpokladá jednoliate pozadie produktovej fotky; pri rušnom
+  pozadí analýza vráti „nenašli“ alebo nepresný profil.
+- Dĺžka nohavíc sa nemení (lem = členok podľa DensePose, topánky chránené).
+
 ## Plánované vylepšenia
 
 1. Otestovať na Kaggle ochranu rúk a predĺženie pre dlhý vrch (~10 fotiek
-   s rukami pri tele; krátky ↔ dlhý rukáv, tričko → tunika) a masku pre šaty
-   (mini / po kolená / maxi, muž aj žena) a výsledky zapísať do Zistení.
+   s rukami pri tele; krátky ↔ dlhý rukáv, tričko → tunika), masku pre šaty
+   (mini / po kolená / maxi, muž aj žena) a rozšírenie masky pre široké
+   nohavice (`fit="auto"` vs. `"off"`, rovnaký seed) a výsledky zapísať do Zistení.
 2. Ručný prepínač rukávov a dĺžky (auto / …) v UI, ak sa CLIP často mýli.
 3. Ručná úprava masky v UI (štetec) – CatVTON vlastnú masku podporuje.
 4. Riešenie rozmazania pri veľkých fotkách (nezväčšovať výsledok / voľba
