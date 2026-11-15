@@ -1,6 +1,6 @@
 # Architektúra a technológie
 
-Stav k 2026-11-12. Celkový pohľad na projekt: z čoho sa skladá, aké technológie
+Stav k 2026-11-13. Celkový pohľad na projekt: z čoho sa skladá, aké technológie
 používa, ako sa spúšťa a ako sa na ňom pracuje. Podrobnosti o modeli sú
 v [backend.md](backend.md).
 
@@ -20,6 +20,7 @@ UI alebo cez API (pre rozšírenie do prehliadača).
 | Model | **CatVTON** (`mix-48k-1024`) | virtuálne skúšanie – difúzny model na báze Stable Diffusion 1.5 inpainting |
 | Maskovanie | AutoMasker z CatVTON: **DensePose** (detectron2) + **SCHP**, upravený v `src/masking.py` | automatická maska oblasti, ktorá sa prekreslí |
 | Rukávy, dĺžka | **CLIP** (`openai/clip-vit-base-patch32`, zero-shot) | z fotky oblečenia určí rukáv (krátky / dlhý / bez) a dĺžku vrchu → ochrana rúk a predĺženie masky |
+| Strih nohavíc | vlastný algoritmus (OpenCV, numpy), **bez modelu** | z fotky nohavíc zmeria profil šírky → rozšírenie masky pre široké nohavice |
 | ML knižnice | PyTorch, diffusers, transformers, accelerate | beh modelu na GPU (fp16) |
 | Váhy | Hugging Face Hub (`huggingface_hub`) | sťahovanie váh CatVTON a SD inpainting |
 | GPU | **Kaggle Notebooks** (T4 16 GB / P100) | skutočné generovanie; lokálne PC nemá GPU |
@@ -63,7 +64,8 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
 | `ui/theme.py` | Gradio téma, CSS premenné z `config.COLORS`, `<head>` s písmami, vynútenie svetlého režimu |
 | `ui/styles.css`, `ui/page.css` | vzhľad komponentov a stránky |
 | `src/try_on.py` | backend s CatVTON ([backend.md](backend.md)) |
-| `src/masking.py` | úprava masky AutoMaskera: predĺženie pre dlhý vrch, ochrana rúk |
+| `src/masking.py` | úprava masky AutoMaskera: predĺženie pre dlhý vrch, tvar šiat, ochrana rúk, analýza strihu nohavíc a rozšírenie masky pre široké nohavice |
+| `scripts/analyza_strihu.py` | lokálny test analýzy strihu nohavíc (bez GPU) |
 | `assets/examples/` | ukážkové osoby (`person_*.png`) a oblečenie (`cloth_*.png`) |
 | `kaggle/run.ipynb` | spúšťač na Kaggle |
 | `requirements.txt` / `requirements-gpu.txt` | závislosti UI / backendu |
@@ -128,8 +130,9 @@ režim.
 ```
 1. predspracovanie   osoba → výrez 3:4, 768×1024; oblečenie → biely okraj
 2. CLIP              rukáv (upper / overall) + dĺžka vrchu (upper)
+   strih nohavíc     profil šírky z fotky nohavíc (lower, vlastný algoritmus)
 3. maska             AutoMasker (DensePose + SCHP) podľa typu
-4. úprava masky      + predĺženie (dlhý vrch),
+4. úprava masky      + predĺženie (dlhý vrch), + rozšírenie (široké nohavice),
                      − dlane (+ holé ruky pri krátkom rukáve)
 5. blur okraja masky
 6. CatVTON           30–50 krokov difúzie – najdlhší krok
