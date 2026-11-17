@@ -167,7 +167,8 @@ Poradie: **pravidlá (bez AI) → CLIP → `upper`**.
   výstrih / ramienka), `hem_width` šírka pri leme, `widest_at` kde je silueta
   najširšia, `narrowest` najužšie miesto v hornej časti.
 - Rozhodovací strom (prahy `RULE_*`):
-  1. dve nohavice: hore súvislý pás → `lower` (nohavice, šortky), inak `overall` (overal),
+  1. dve nohavice: rozkrok ≤ 48 % výšky (`crotch_at`) alebo výška / šírka < 1,4
+     alebo hore súvislý pás → `lower` (nohavice, šortky); inak `overall` (overal),
   2. dlhá (výška / šírka ≥ 1,45): rovný pás + rozširuje sa nadol → `lower`
      (maxi sukňa), inak `overall` (šaty),
   3. krátka, najširšia hore a lem užší → `upper` (rukávy / ramená),
@@ -196,7 +197,15 @@ majú nízky pomer strán a pri leme sa dotýkajú, takže test „dve nohavice�
 v spodných 25 % zlyhal a padli do pravidla 5. Oprava: pár nohavíc sa hľadá od
 35 % výšky, pravidlo 5 vyžaduje hore úzky okraj (široký pás → neisté → CLIP).
 Umelé baggy siluety (dotýkajúce sa aj rozkročené) → `lower`; ostatné bez
-zmeny, sveter s rukávmi pri tele → neisté (CLIP). Overiť znova na Kaggle.
+zmeny, sveter s rukávmi pri tele → neisté (CLIP).
+
+**2. test na Kaggle (2026-11-17).** Tie isté baggy nohavice → `overall`
+(„dve nohavice a hore výstrih / ramená“). Pár nohavíc sa už našiel, ale horný
+okraj nevyzeral ako rovný pás (guma, šnúrka, zakrivenie). Oprava: nový znak
+`crotch_at` – poloha rozkroku (nohavice ~0,3–0,42 výšky, overal ~0,5–0,6);
+tvar horného okraja rozhoduje až pri nízkom rozkroku. Umelá silueta baggy
+s gumou a šnúrkou → `lower`, overaly ostávajú `overall`. Riziko: overal
+s dlhým trupom vs. nohavice s vysokým pásom pri hranici 0,48.
 
 **Riziká / overiť na skutočných fotkách.** Prahy sú odladené na umelých
 siluetách. Tielko vs. šaty (bez mierky rozhoduje len pomer strán), dlhý kabát

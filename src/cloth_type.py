@@ -29,6 +29,8 @@ RULE_SLEEVES_ZONE = 0.5      # najširšie miesto v hornej polovici → rukávy 
 RULE_SLEEVES_HEM = 0.85      # … a lem užší ako 85 % max. šírky
 RULE_WAISTBAND = 0.42        # horný okraj ako súvislý pás ≥ 42 % max. šírky → sukňa / nohavice
 RULE_PANTS_TOP = 0.6         # nohavice: hore súvislý pás ≥ 60 % (inak výstrih / ramená → overal)
+RULE_CROTCH_PANTS = 0.48     # rozkrok v hornej časti (≤ 48 % výšky) → nohavice, nie overal
+RULE_SHORT = 1.4             # dve nohavice a výška / šírka < 1,4 → šortky / široké nohavice
 RULE_WIDE_TOP = 0.7          # krátka rovná silueta s pásom ≥ 70 % hore = asi spodok → neisté
 RULE_FLARE = 1.25            # lem ≥ 1,25 × najužšie miesto → rozširuje sa nadol
 
@@ -54,11 +56,16 @@ def features(fg: np.ndarray) -> dict:
                 and abs(gap_center - w / 2) <= RULE_LEGS_CENTER * w)
 
     legs_rows = runs[band(RULE_LEGS_FROM, 1.0)]
+    # Rozkrok: prvý riadok (od 15 % výšky), od ktorého ďalších 5 % riadkov je prevažne pár nohavíc
+    pairs = np.array([leg_pair(r) for r in runs], float)
+    win = max(1, int(0.05 * h))
+    crotch = next((y for y in range(int(0.15 * h), h - win) if pairs[y: y + win].mean() >= 0.6), h)
     top = band(0.02, 0.08)                             # tesne pod horným okrajom
     top_runs = [len(r) for r in runs[top]]
     return {
         "aspect": h / w,
         "legs": float(np.mean([leg_pair(r) for r in legs_rows])),
+        "crotch_at": crotch / h,
         "top_width": float(np.median(widths[top])),
         "top_single": float(np.mean([n == 1 for n in top_runs])) >= 0.5,
         "hem_width": float(np.median(widths[band(0.9, 0.98)])),
@@ -71,9 +78,13 @@ def decide(f: dict) -> tuple[str | None, str]:
     """Rozhodovací strom nad znakmi. Vráti (typ alebo None, dôvod)."""
     sleeves = f["widest_at"] < RULE_SLEEVES_ZONE and f["hem_width"] < RULE_SLEEVES_HEM
     if f["legs"] >= RULE_LEGS_SHARE:
+        if f["crotch_at"] <= RULE_CROTCH_PANTS:
+            return "lower", "dve nohavice, rozkrok v hornej časti (nohavice)"
+        if f["aspect"] < RULE_SHORT:
+            return "lower", "dve nohavice, nízky pomer strán (šortky / široké nohavice)"
         if f["top_single"] and f["top_width"] >= RULE_PANTS_TOP and f["widest_at"] >= 0.15:
-            return "lower", "spodok sa delí na dve nohavice, hore pás"
-        return "overall", "dve nohavice a hore výstrih / ramená (overal)"
+            return "lower", "dve nohavice, hore pás"
+        return "overall", "dve nohavice, rozkrok nízko a hore výstrih / ramená (overal)"
     waistband = f["top_single"] and f["top_width"] >= RULE_WAISTBAND
     flare = f["hem_width"] >= RULE_FLARE * f["narrowest"]
     if f["aspect"] >= RULE_LONG:
