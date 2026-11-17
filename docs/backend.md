@@ -108,7 +108,8 @@ SCHP, difúzny model). 🟢 = klasický algoritmus, 🔵 = natrénovaný AI mode
 - Model postupne (`steps` krokov) odšumuje oblasť masky. Cez self-attention
   „kuká“ na oblečenie vedľa a prenáša jeho vzor, farbu a strih na telo
   (záhyby, tiene, póza).
-- `guidance_scale` 2,5 určuje, ako silno sa výsledok drží oblečenia.
+- `guidance_scale` 3,5 určuje, ako silno sa výsledok drží oblečenia (CatVTON
+  predvolene 2,5; zvýšené 2026-11-17, aby baggy nohavice vyšli širšie).
   `seed` zaručí opakovateľnosť.
 - *Bez AI:* TPS deformácia (warp) fotky oblečenia podľa bodov tela a vloženie
   na osobu, ako pri starších metódach. Výsledok nemá záhyby, tiene ani
@@ -136,7 +137,7 @@ try_on(person_img, cloth_img, cloth_type, **options) -> dict
 | `steps` | `int` (predvolene 30) | počet krokov difúzie; CatVTON odporúča 50 |
 | `seed` | `int` (predvolene 42) | rovnaký seed = rovnaký výsledok |
 | `paste_face` | `bool` (predvolene `True`) | vrátiť pôvodné pixely mimo masky |
-| `guidance_scale` | `float` (predvolene 2.5) | voliteľné, UI ho zatiaľ neposiela |
+| `guidance_scale` | `float` (predvolene 3.5) | voliteľné, UI ho zatiaľ neposiela |
 | `sleeves` | `"auto"` \| `"short"` \| `"long"` \| `"sleeveless"` | voliteľné, ručné určenie rukávov namiesto CLIP (na testovanie); UI ho neposiela |
 | `length` | `"auto"` \| `"cropped"` \| `"regular"` \| `"long"` | voliteľné, ručné určenie dĺžky vrchu namiesto CLIP (na testovanie); UI ho neposiela |
 | `fit` | `"auto"` \| `"off"` | voliteľné, `"off"` vypne rozšírenie masky podľa strihu nohavíc (na porovnanie pred / po); UI ho posiela podľa prepínača „Respektovať strih“, API `/try_on` ho nemá (vždy `auto`) |
@@ -571,13 +572,13 @@ voľnosti strihu**
 - V každom riadku od rozkroku po lem (pomery k šírke bokov osoby):
   - **voľnosť** = (nový pomer − priliehavé nohavice) / 0,12, orezané 0…1;
     priliehavé = profil skinny na fotke, lineárne 0,47 → 0,31 (`FIT_TIGHT`),
-  - **cieľ** = noha + voľnosť × (1,15 × nový pomer − noha)
+  - **cieľ** = noha + voľnosť × (1,35 × nový pomer − noha)
     (`FIT_LOOSE_SCALE`: voľná látka visí, na osobe je ~ako na fotke),
   - **rozdiel** = cieľ − pôvodné nohavice; vonkajší okraj sa posunie von
-    o 75 % rozdielu (`FIT_OUTER_SHARE`; dnu je maska už medzi nohami).
+    o celý rozdiel (`FIT_OUTER_SHARE` = 1; dnu je maska už medzi nohami).
 - Skinny → cieľ = noha → nič. Baggy na osobe v úzkych riflách → široko.
   Baggy na osobe v baggy → pôvodné sú už široké → málo / nič.
-- Strop 40 % bokov na stranu (`FIT_MAX_EXTRA`), okraj sa vyhladí (~8 % dĺžky nohy).
+- Strop 50 % bokov na stranu (`FIT_MAX_EXTRA`), okraj sa vyhladí (~8 % dĺžky nohy).
 - Pridá sa len to, čo nie je chránené: dlane a chodidlá (DensePose,
   roztiahnuté), vlasy, vrch, kabát, tvár, ruky, topánky (SCHP LIP aj ATR).
 - Ak prírastok plochy < 1 % (`FIT_MIN_GAIN`), maska sa nemení.
@@ -617,6 +618,19 @@ rovné 0,38–0,40, skinny 0,32. Simulácia na fotke chalana v skinny riflách
 (SCHP / DensePose nahradené segmentáciou riflí podľa farby, maska = konvexný
 obal riflí): baggy +18 až +40 % plochy masky (smerom k lemu viac), rovné
 +1 %, skinny 0 %.
+
+**Kaggle (2026-11-17): lepšie, ale stále úzke.** Zelené baggy na chalanovi
+v skinny riflách vyšli širšie ako predtým, ale stále užšie, ako by mali.
+Úprava: `FIT_LOOSE_SCALE` 1,15 → 1,35, `FIT_OUTER_SHARE` 0,75 → 1,0,
+`FIT_MAX_EXTRA` 0,4 → 0,5. Simulácia: prírastok masky +18 % → +40 %
+(skúšané aj +56 %, vyzeralo ako sukňa). Skinny / rovné bez zmeny.
+
+**Širšia maska, nohavice stále úzke (2026-11-17).** Maska je širšia, ale
+CatVTON v nej nohavice nakreslí úzko a zvyšok vyplní pozadím – vo vnútri masky
+nič nevidí a tvar odhaduje z okolia (úzke boky, topánky pri sebe). Pokus:
+`guidance_scale` 2,5 → 3,5 (silnejšie držanie sa fotky oblečenia). Overiť na
+Kaggle: širšie nohavice? prepálené farby / artefakty pri vrchu a šatách?
+Ďalšia možnosť, ak nepomôže: nápoveda tvaru vo vnútri masky (úprava pipeline).
 
 **Riziká / overiť na Kaggle.**
 

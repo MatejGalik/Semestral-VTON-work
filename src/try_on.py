@@ -49,7 +49,7 @@ WIDTH, HEIGHT = 768, 1024                     # rozlíšenie, na ktorom bol mode
 BASE_MODEL = "booksforcharlie/stable-diffusion-inpainting"  # kópia SD 1.5 inpainting (runwayml repo bolo zmazané)
 CATVTON_REPO = "zhengchong/CatVTON"
 ATTN_VERSION = "mix"                          # váhy mix-48k-1024
-GUIDANCE_SCALE = 2.5                          # predvolená hodnota z CatVTON
+GUIDANCE_SCALE = 3.5                          # CatVTON má 2.5; vyššia = viac drží strih oblečenia
 MASK_BLUR = 9                                 # rozmazanie okraja masky (ako v CatVTON demo)
 
 # Úprava masky podľa nového oblečenia (CLIP zero-shot)
