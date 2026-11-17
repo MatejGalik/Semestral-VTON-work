@@ -20,7 +20,7 @@ UI alebo cez API (pre rozšírenie do prehliadača).
 | Model | **CatVTON** (`mix-48k-1024`) | virtuálne skúšanie – difúzny model na báze Stable Diffusion 1.5 inpainting |
 | Maskovanie | AutoMasker z CatVTON: **DensePose** (detectron2) + **SCHP**, upravený v `src/masking.py` | automatická maska oblasti, ktorá sa prekreslí |
 | Rukávy, dĺžka | **CLIP** (`openai/clip-vit-base-patch32`, zero-shot) | z fotky oblečenia určí rukáv (krátky / dlhý / bez) a dĺžku vrchu → ochrana rúk a predĺženie masky |
-| Typ oblečenia (auto) | vlastné pravidlá nad siluetou (OpenCV, numpy), **bez modelu**; pri neistote CLIP | z fotky oblečenia určí `upper` / `lower` / `overall` |
+| Typ oblečenia (auto) | vlastné pravidlá nad siluetou (OpenCV, numpy), **bez modelu**; pri neistote ručný výber | z fotky oblečenia určí `upper` / `lower` / `overall` |
 | Strih nohavíc | vlastný algoritmus (OpenCV, numpy), **bez modelu** | z fotky nohavíc zmeria profil šírky → rozšírenie masky pre široké nohavice |
 | ML knižnice | PyTorch, diffusers, transformers, accelerate | beh modelu na GPU (fp16) |
 | Váhy | Hugging Face Hub (`huggingface_hub`) | sťahovanie váh CatVTON a SD inpainting |
@@ -77,7 +77,8 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
 
 ## UI
 
-- **Tab Skúšanie:** karta Osoba + karta Produkt = karta Výsledok, typ
+- **Tab Skúšanie:** karta Osoba + karta Produkt (RGBA – priehľadné pozadie
+  produktu sa zachová pre siluetu, CatVTON dostane fotku na bielom) = karta Výsledok, typ
   oblečenia (Automaticky / Vrchný diel / Spodný diel / Celé / šaty;
   predvolene Automaticky – typ určí CLIP a stavový riadok ho vypíše),
   tlačidlo Vyskúšať, stiahnutie výsledku (PNG).
@@ -138,7 +139,7 @@ režim.
 
 ```
 1. predspracovanie   osoba → výrez 3:4, 768×1024; oblečenie → biely okraj
-   typ oblečenia     len pri auto: pravidlá nad siluetou, pri neistote CLIP
+   typ oblečenia     len pri auto: pravidlá nad siluetou (bez AI), neisté → ručne
 2. CLIP              rukáv (upper / overall)
                      + dĺžka vrchu (upper)
    strih nohavíc     profil šírky z fotky nohavíc (lower, vlastný algoritmus)

@@ -13,7 +13,8 @@ src/try_on.py: try_on()
    1. predspracovanie   – osoba: výrez 3:4 + zmena na 768×1024
                           oblečenie: doplnenie bielym okrajom na 768×1024
    1b. typ oblečenia    – len pri cloth_type="auto": pravidlá nad siluetou
-                          (src/cloth_type.py, bez AI), keď nie sú isté, CLIP
+                          (src/cloth_type.py, bez AI); neisté → UI vyzve na
+                          ručný výber (API → upper)
    2. nové oblečenie    – CLIP z fotky oblečenia: rukáv (upper / overall),
                           dĺžka vrchu (upper), dĺžka šiat (overall);
                           strih nohavíc (lower) – vlastný algoritmus, bez modelu
@@ -38,7 +39,7 @@ SCHP, difúzny model). 🟢 = klasický algoritmus, 🔵 = natrénovaný AI mode
 | # | Krok | Typ | Dá sa bez AI? |
 |---|---|---|---|
 | 1 | Predspracovanie | 🟢 | už je |
-| 1b | Typ oblečenia pri `auto` – pravidlá nad siluetou | 🟢 | už je (CLIP 🔵 len pri neistote) |
+| 1b | Typ oblečenia pri `auto` – pravidlá nad siluetou | 🟢 | už je |
 | 2 | Rukáv a dĺžka nového oblečenia (CLIP) | 🔵 | áno, silueta oblečenia (len na čistom pozadí) |
 | 2b | Strih nohavíc (`analyze_pants`) | 🟢 | už je |
 | 3a | Póza / časti tela (DensePose) | 🔵 | nie |
@@ -131,14 +132,13 @@ try_on(person_img, cloth_img, cloth_type, **options) -> dict
 | Parameter | Typ | Význam |
 |---|---|---|
 | `person_img`, `cloth_img` | `PIL.Image` | fotka osoby a oblečenia |
-| `cloth_type` | `"upper"` \| `"lower"` \| `"overall"` \| `"auto"` | ktorú časť tela maskovať; `"auto"` = typ určí CLIP z fotky oblečenia (predvolené v UI) |
+| `cloth_type` | `"upper"` \| `"lower"` \| `"overall"` \| `"auto"` | ktorú časť tela maskovať; `"auto"` = typ určia pravidlá nad siluetou fotky oblečenia, bez AI (predvolené v UI) |
 | `steps` | `int` (predvolene 30) | počet krokov difúzie; CatVTON odporúča 50 |
 | `seed` | `int` (predvolene 42) | rovnaký seed = rovnaký výsledok |
 | `paste_face` | `bool` (predvolene `True`) | vrátiť pôvodné pixely mimo masky |
 | `guidance_scale` | `float` (predvolene 2.5) | voliteľné, UI ho zatiaľ neposiela |
 | `sleeves` | `"auto"` \| `"short"` \| `"long"` \| `"sleeveless"` | voliteľné, ručné určenie rukávov namiesto CLIP (na testovanie); UI ho neposiela |
 | `length` | `"auto"` \| `"cropped"` \| `"regular"` \| `"long"` | voliteľné, ručné určenie dĺžky vrchu namiesto CLIP (na testovanie); UI ho neposiela |
-| `detect` | `"rules"` \| `"clip"` | voliteľné, pri `cloth_type="auto"`: `"clip"` preskočí pravidlá (porovnanie); UI ho neposiela |
 | `fit` | `"auto"` \| `"off"` | voliteľné, `"off"` vypne rozšírenie masky podľa strihu nohavíc (na porovnanie pred / po); UI ho posiela podľa prepínača „Respektovať strih“, API `/try_on` ho nemá (vždy `auto`) |
 
 Návrat: `result` (výsledok v pôvodnom rozmere fotky), `mask` (upravená maska
@@ -153,12 +153,14 @@ funguje ďalej (hodnota `"auto"` len pribudla, pôvodné tri ostávajú).
 
 _Stav: **implementované 2026-11-17, overené lokálne v DEMO režime, čaká na test na Kaggle.**_
 
-Poradie: **pravidlá (bez AI) → CLIP → `upper`**.
+Len **vlastné pravidlá, bez AI** (CLIP sa na typ nepoužíva). Neisté → UI
+vyzve na ručný výber a negeneruje; cez API → `CLOTH_TYPE_FALLBACK` = `upper`.
 
 **1. Pravidlá nad siluetou** (`src/cloth_type.py`, ~10 ms, len OpenCV / numpy)
 
-- Silueta ako pri strihu nohavíc (`masking.silhouette`: farba ≠ pozadie,
-  najväčšia oblasť), orezaná na ohraničujúci obdĺžnik.
+- Silueta ako pri strihu nohavíc (`masking.silhouette`): fotka s priehľadným
+  pozadím (PNG / WebP) → **alfa kanál**; inak farba ≠ pozadie (medián okraja).
+  Najväčšia oblasť, orezaná na ohraničujúci obdĺžnik.
 - Znaky (relatívne, bez mierky): `aspect` výška / šírka, `legs` podiel riadkov
   od 35 % výšky po lem, kde je „pár nohavíc“ – presne dva úseky, podobne široké
   (≥ 60 %), medzera pri strede siluety (baggy sa pri leme dotýkajú; tri úseky
@@ -174,15 +176,13 @@ Poradie: **pravidlá (bez AI) → CLIP → `upper`**.
   3. krátka, najširšia hore a lem užší → `upper` (rukávy / ramená),
   4. krátka, rovný pás + rozširuje sa → `lower` (sukňa),
   5. krátka, rovná a hore **bez** širokého pásu (< 70 %) → `upper`; inak
-     **neisté** → CLIP.
-- Bez siluety (rušné pozadie, fotka bez okraja) → CLIP.
+     **neisté**.
+- Bez siluety (rušné pozadie) → neisté.
+- UI (`app.run_tryon`) spustí pravidlá pred generovaním; pri neistote ukáže
+  upozornenie s dôvodom a negeneruje. DEMO režim používa tie isté pravidlá.
 
-**2. CLIP** (len keď pravidlá nerozhodnú, alebo `detect="clip"`): zero-shot,
-3 triedy `CLOTH_TYPE_PROMPTS`, najpravdepodobnejšia bez prahu. Bez CLIP →
-`CLOTH_TYPE_FALLBACK` = `upper`. DEMO režim používa len pravidlá.
-
-**Výstup:** `info["cloth_type"]` = typ, istota a zdroj (`rules` / `clip` /
-`manual` / `fallback`), `info["cloth_type_reason"]` = dôvod z pravidiel; UI
+**Výstup:** `info["cloth_type"]` = typ a zdroj (`rules` / `manual` /
+`fallback`), `info["cloth_type_reason"]` = dôvod z pravidiel; UI
 ukáže typ v stavovom riadku („rozpoznané: Spodný diel“). Ručný výber ostáva.
 
 **Lokálne overenie (2026-11-17).** `python scripts/typ_oblecenia.py <fotky>`
@@ -197,7 +197,7 @@ majú nízky pomer strán a pri leme sa dotýkajú, takže test „dve nohavice�
 v spodných 25 % zlyhal a padli do pravidla 5. Oprava: pár nohavíc sa hľadá od
 35 % výšky, pravidlo 5 vyžaduje hore úzky okraj (široký pás → neisté → CLIP).
 Umelé baggy siluety (dotýkajúce sa aj rozkročené) → `lower`; ostatné bez
-zmeny, sveter s rukávmi pri tele → neisté (CLIP).
+zmeny, sveter s rukávmi pri tele → neisté.
 
 **2. test na Kaggle (2026-11-17).** Tie isté baggy nohavice → `overall`
 („dve nohavice a hore výstrih / ramená“). Pár nohavíc sa už našiel, ale horný
@@ -206,6 +206,18 @@ okraj nevyzeral ako rovný pás (guma, šnúrka, zakrivenie). Oprava: nový znak
 tvar horného okraja rozhoduje až pri nízkom rozkroku. Umelá silueta baggy
 s gumou a šnúrkou → `lower`, overaly ostávajú `overall`. Riziko: overal
 s dlhým trupom vs. nohavice s vysokým pásom pri hranici 0,48.
+
+**3. test – skutočné fotky (2026-11-17).** Priečinok s 10 produktovými
+fotkami (skinny, rovné, 4× baggy, 2 tričká, šaty) + fotky ľudí. Príčina
+chýb na Kaggle: 3 fotky (vrátane baggy z testu) majú **priehľadné pozadie**
+(RGBA WebP). UI (`image_mode="RGB"`) aj `convert("RGB")` alfa zahodili →
+pozadie čierne / s náhodnými farbami → rozbitá silueta. Rovnaké skreslené
+pozadie dostával aj CatVTON ako fotku oblečenia. Oprava: UI posiela RGBA,
+silueta z alfa kanála, CatVTON dostane fotku na bielom (`masking.flatten`);
+CLIP z určenia typu odstránený (neisté → ručný výber). Výsledok: **10/10
+produktových fotiek správne**. Fotky ľudí (nie produkt) pravidlá
+klasifikujú nezmyselne (osoba v rifliach → `lower`) – na fotku osoby
+v karte Produkt pravidlá nie sú určené.
 
 **Riziká / overiť na skutočných fotkách.** Prahy sú odladené na umelých
 siluetách. Tielko vs. šaty (bez mierky rozhoduje len pomer strán), dlhý kabát

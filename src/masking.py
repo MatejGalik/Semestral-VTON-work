@@ -174,16 +174,40 @@ def _smooth(a: np.ndarray, n: int) -> np.ndarray:
     return np.convolve(np.pad(a, n // 2, mode="edge"), np.ones(n) / n, mode="valid")
 
 
+def _alpha(img: Image.Image) -> np.ndarray | None:
+    """Alfa kanál (0–255), ak má fotka priehľadné pozadie (aspoň 5 % pixelov), inak None."""
+    if img.mode not in ("RGBA", "LA", "PA") and "transparency" not in img.info:
+        return None
+    a = np.asarray(img.convert("RGBA"))[..., 3]
+    return a if (a < 128).mean() >= 0.05 else None
+
+
+def flatten(img: Image.Image) -> Image.Image:
+    """RGB na bielom pozadí. Priehľadné pozadie (PNG / WebP produktov) by pri
+    obyčajnom convert("RGB") zostalo čierne alebo s náhodnými farbami."""
+    if _alpha(img) is None:
+        return img.convert("RGB")
+    rgba = img.convert("RGBA")
+    white = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+    return Image.alpha_composite(white, rgba).convert("RGB")
+
+
 def silhouette(cloth: Image.Image) -> np.ndarray | None:
     """Silueta oblečenia na produktovej fotke (bool H×W) alebo None.
 
-    Pixely, ktoré sa farbou líšia od pozadia (medián okraja fotky), otvorenie /
-    zatvorenie (OpenCV), najväčšia súvislá oblasť. Predpokladá jednoliate pozadie.
+    Priehľadné pozadie → priamo alfa kanál. Inak pixely, ktoré sa farbou líšia
+    od pozadia (medián okraja fotky). Potom otvorenie / zatvorenie (OpenCV)
+    a najväčšia súvislá oblasť. Bez priehľadnosti predpokladá jednoliate pozadie.
     """
-    img = np.asarray(cloth.convert("RGB")).astype(np.int16)
-    h, w, _ = img.shape
-    border = np.concatenate([img[0], img[-1], img[:, 0], img[:, -1]])
-    fg = np.abs(img - np.median(border, axis=0)).max(axis=-1) > FIT_BG_TOLERANCE
+    alpha = _alpha(cloth)
+    if alpha is not None:
+        fg = alpha >= 128
+        h, w = fg.shape
+    else:
+        img = np.asarray(cloth.convert("RGB")).astype(np.int16)
+        h, w, _ = img.shape
+        border = np.concatenate([img[0], img[-1], img[:, 0], img[:, -1]])
+        fg = np.abs(img - np.median(border, axis=0)).max(axis=-1) > FIT_BG_TOLERANCE
     k = _kernel((w, h), 150)
     fg = cv2.morphologyEx(fg.astype(np.uint8), cv2.MORPH_OPEN, k)
     fg = cv2.morphologyEx(fg, cv2.MORPH_CLOSE, k)

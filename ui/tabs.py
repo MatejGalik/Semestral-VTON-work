@@ -104,7 +104,7 @@ def build_tryon_tab(run_fn: Callable) -> None:
                 _card_title(T["card_product"])
                 cloth = gr.Image(
                     type="pil",
-                    image_mode="RGB",
+                    image_mode="RGBA",  # priehľadné pozadie produktu → silueta z alfa kanála
                     sources=["upload", "clipboard"],
                     show_label=False,
                     container=False,

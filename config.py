@@ -107,6 +107,7 @@ TEXTS = {
     "err_no_person": "Chýba fotka osoby.",
     "err_no_cloth": "Chýba fotka oblečenia.",
     "err_bad_type": "Neznámy typ oblečenia.",
+    "err_type_unknown": "Typ oblečenia sa nepodarilo rozpoznať ({reason}). Vyber ho ručne.",
     "err_backend": "Generovanie zlyhalo: {error}",
     "err_oom": "Na GPU došla pamäť. Skús menej krokov alebo menšiu fotku.",
 }

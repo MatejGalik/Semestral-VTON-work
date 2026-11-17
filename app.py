@@ -51,6 +51,7 @@ def _font(size: int) -> ImageFont.ImageFont:
 
 def _stub_try_on(person_img, cloth_img, cloth_type, **options) -> dict:
     """Vráti fotku osoby s nápisom „DEMO režim“ a hrubú masku podľa typu."""
+    person_img = person_img.convert("RGB")
     time.sleep(1.5)  # nech je vidieť stav „Generujem…“
     img = person_img.convert("RGB").copy()
     w, h = img.size
@@ -67,7 +68,7 @@ def _stub_try_on(person_img, cloth_img, cloth_type, **options) -> dict:
               font=font, fill=(255, 255, 255, 255))
     img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
 
-    if cloth_type == "auto":  # DEMO nemá CLIP – len pravidlá (ak je OpenCV), inak "upper"
+    if cloth_type == "auto":  # pravidlá ako v backende (ak je OpenCV), inak "upper"
         try:
             from src.cloth_type import classify
 
@@ -119,6 +120,16 @@ def run_tryon(person_img, cloth_img, cloth_type, steps, seed, paste_face, show_m
     if cloth_type not in VALID_TYPES:
         _warn(T["err_bad_type"])
         return _no_change()
+    if cloth_type == "auto":  # pravidlá bez AI; neisté → používateľ vyberie ručne
+        try:
+            from src.cloth_type import classify
+        except ImportError:  # lokálne bez OpenCV / numpy
+            classify = None
+        if classify is not None:
+            detected, reason = classify(cloth_img)
+            if detected is None:
+                _warn(T["err_type_unknown"].format(reason=reason))
+                return _no_change()
 
     seed = int(seed) if seed is not None else -1
     if seed < 0:

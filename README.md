@@ -156,8 +156,8 @@ Vypíše typ (upper / lower / overall alebo „neisté“), dôvod a znaky silue
 
 1. Nahraj fotku osoby (karta **Osoba**) a fotku oblečenia (karta **Produkt**),
    alebo klikni na príklad v sekcii **Príklady**.
-2. Typ oblečenia nechaj na **Automaticky** (rozpozná ho zo siluety, pri
-   neistote CLIP), alebo vyber
+2. Typ oblečenia nechaj na **Automaticky** (rozpozná ho zo siluety
+   bez AI; keď si nie je istý, vyzve ťa vybrať ručne), alebo vyber
    ručne: Vrchný diel / Spodný diel / Celé / šaty.
 3. Klikni **Vyskúšať**. Výsledok si stiahneš tlačidlom **Stiahnuť**.
 
