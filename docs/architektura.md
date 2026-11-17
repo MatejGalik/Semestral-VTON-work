@@ -85,7 +85,10 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
   predvolene Automaticky – typ určia pravidlá a stavový riadok ho vypíše),
   tlačidlo Vyskúšať, stiahnutie výsledku (PNG).
 - **Prepínače pod tlačidlom:** zobraziť masku, respektovať strih (predvolene
-  zapnuté; vypnuté → `fit="off"`, maska bez rozšírenia podľa strihu).
+  zapnuté; vypnuté → `fit="off"`, maska bez rozšírenia podľa strihu),
+  rukávy a dĺžka (CLIP) (predvolene zapnuté; vypnuté → `clip="off"`, bez
+  ochrany rúk, predĺženia vrchu a rezu šiat podľa dĺžky). Oba posiela len UI,
+  API `/try_on` ich nemá.
 - Kroky (30), seed (42) a vloženie tváre (áno) sú **skryté vstupy** – v UI sa
   nenastavujú, ale ostávajú vo vstupoch API `/try_on` (kontrakt sa nemení).
 - Generovanie beží po jednom (`concurrency_limit=1`), chyby a nedostatok

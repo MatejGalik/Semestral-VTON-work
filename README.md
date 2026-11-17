@@ -160,9 +160,10 @@ Vypíše typ (upper / lower / overall alebo „neisté“), dôvod a znaky silue
    ručne: Vrchný diel / Spodný diel / Celé / šaty.
 3. Klikni **Vyskúšať**. Výsledok si stiahneš tlačidlom **Stiahnuť**.
 
-Pod tlačidlom sú prepínače **Zobraziť masku** a **Respektovať strih** (vypni
-na porovnanie bez rozšírenia masky podľa strihu nohavíc; cez API je vždy
-zapnuté). Počet krokov (30), seed (42) a vloženie pôvodnej tváre sa v UI
+Pod tlačidlom sú prepínače **Zobraziť masku**, **Respektovať strih** (vypni
+na porovnanie bez rozšírenia masky podľa strihu nohavíc) a **Rukávy a dĺžka
+(CLIP)** (vypni, ak CLIP zle určí rukáv – napr. mikina s „vyhrnutými“
+rukávmi). Cez API sú oba posledné vždy zapnuté. Počet krokov (30), seed (42) a vloženie pôvodnej tváre sa v UI
 nenastavujú – dajú sa zmeniť len cez API.
 
 ## API

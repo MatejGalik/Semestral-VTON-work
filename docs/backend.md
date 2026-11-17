@@ -140,6 +140,7 @@ try_on(person_img, cloth_img, cloth_type, **options) -> dict
 | `guidance_scale` | `float` (predvolene 2.5) | voliteľné, UI ho zatiaľ neposiela |
 | `sleeves` | `"auto"` \| `"short"` \| `"long"` \| `"sleeveless"` | voliteľné, ručné určenie rukávov namiesto CLIP (na testovanie); UI ho neposiela |
 | `length` | `"auto"` \| `"cropped"` \| `"regular"` \| `"long"` | voliteľné, ručné určenie dĺžky vrchu namiesto CLIP (na testovanie); UI ho neposiela |
+| `clip` | `"auto"` \| `"off"` | voliteľné, `"off"` vypne CLIP: bez ochrany rúk pri krátkom rukáve, bez predĺženia dlhého vrchu, šaty bez rezu podľa dĺžky (tvar tela ostáva); UI podľa prepínača „Rukávy a dĺžka (CLIP)“, API ho nemá (vždy `auto`) |
 | `fit` | `"auto"` \| `"off"` | voliteľné, `"off"` vypne rozšírenie masky podľa strihu nohavíc (na porovnanie pred / po); UI ho posiela podľa prepínača „Respektovať strih“, API `/try_on` ho nemá (vždy `auto`) |
 
 Návrat: `result` (výsledok v pôvodnom rozmere fotky), `mask` (upravená maska
@@ -383,6 +384,12 @@ obal pôvodných nohavíc, `mask_ratio` 0.144); model ho vyplnil celý → rovn�
 nohavice. Cieľová šírka prvej verzie (od tela z DensePose) sa celá zmestila
 do stĺpca → prírastok < 3 % → bez zmeny. Oprava: rozdiel voči pôvodným
 nohaviciam (sekcia nižšie). Pozitívne zistenie: model tvar masky poslúcha.
+
+**Mikina s „vyhrnutými“ rukávmi (2026-11-17).** Mikina (`upper`) na osobe
+v tričku s krátkym rukávom vyšla, akoby mala vyhrnuté rukávy. Podozrenie:
+CLIP určil krátky rukáv → holé ruky sa chránili (vyrezali z masky) → model
+nemal kam nakresliť dlhý rukáv. Overiť v `info` (`sleeves`, `protected`).
+Pridaný prepínač **Rukávy a dĺžka (CLIP)** (`clip="off"`) na porovnanie.
 
 **Možné rozmazanie pri veľkých fotkách.** Výsledok vzniká v 768×1024 a pri
 vložení späť do veľkej fotky (napr. 3000×4000) sa zväčšuje. Pri zapnutom

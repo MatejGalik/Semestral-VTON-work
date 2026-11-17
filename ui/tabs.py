@@ -15,6 +15,7 @@ from config import (
     DEFAULT_CLOTH_TYPE,
     PASTE_FACE_DEFAULT,
     RESPECT_FIT_DEFAULT,
+    USE_CLIP_DEFAULT,
     SEED_DEFAULT,
     SHOW_MASK_DEFAULT,
     STEPS_DEFAULT,
@@ -145,6 +146,8 @@ def build_tryon(run_fn: Callable) -> None:
         show_mask = gr.Checkbox(value=SHOW_MASK_DEFAULT, label=T["show_mask"])
         respect_fit = gr.Checkbox(value=RESPECT_FIT_DEFAULT, label=T["respect_fit"],
                                   info=T["respect_fit_info"])
+        use_clip = gr.Checkbox(value=USE_CLIP_DEFAULT, label=T["use_clip"],
+                               info=T["use_clip_info"])
 
     # Skryté vstupy – v UI sa nenastavujú, ale sú súčasť API /try_on (poradie vstupov)
     steps = gr.Number(value=STEPS_DEFAULT, precision=0, visible=False)
@@ -162,11 +165,11 @@ def build_tryon(run_fn: Callable) -> None:
     api_inputs = [person, cloth, cloth_type, steps, seed, paste_face, show_mask]
     api_outputs = [result, mask, download, status]
 
-    # Tlačidlo v UI posiela navyše prepínač `respect_fit` (súkromná udalosť).
+    # Tlačidlo v UI posiela navyše prepínače `respect_fit`, `use_clip` (súkromná udalosť).
     (
         submit.click(_start, None, [submit, status], queue=False,
                      api_visibility="private")
-        .then(run_fn, api_inputs + [respect_fit], api_outputs,
+        .then(run_fn, api_inputs + [respect_fit, use_clip], api_outputs,
               api_visibility="private", concurrency_limit=1, concurrency_id="try_on",
               show_progress="full", show_progress_on=[result])
         .then(_finish, None, submit, queue=False, api_visibility="private")

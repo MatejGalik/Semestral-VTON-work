@@ -22,6 +22,7 @@ SEED_DEFAULT = 42  # -1 = náhodný seed
 PASTE_FACE_DEFAULT = True
 SHOW_MASK_DEFAULT = False
 RESPECT_FIT_DEFAULT = True  # rozšírenie masky podľa strihu (len UI, API vždy zapnuté)
+USE_CLIP_DEFAULT = True     # rukávy a dĺžka podľa CLIP (len UI, API vždy zapnuté)
 
 EXPECTED_SECONDS = 60  # orientačný čas generovania na GPU (Kaggle T4, 30 krokov)
 
@@ -71,6 +72,8 @@ TEXTS = {
     "show_mask": "Zobraziť masku",
     "respect_fit": "Respektovať strih",
     "respect_fit_info": "Široké nohavice rozšíria masku. Vypni na porovnanie.",
+    "use_clip": "Rukávy a dĺžka (CLIP)",
+    "use_clip_info": "Ochrana rúk pri krátkom rukáve, dĺžka vrchu a šiat. Vypni, ak sa mýli.",
     # Chyby (gr.Warning)
     "warning_title": "Upozornenie",
     "error_title": "Chyba",

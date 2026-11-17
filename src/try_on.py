@@ -15,6 +15,9 @@ Kontrakt (používa ho app.py a API /try_on):
                             length ("auto" | "cropped" | "regular" | "long" pre vrch,
                             "mini" | "knee" | "midi" | "maxi" pre šaty,
                             voliteľné – ručné určenie dĺžky namiesto CLIP),
+                            clip ("auto" | "off", voliteľné – "off" vypne CLIP:
+                            bez ochrany rúk pri krátkom rukáve, bez predĺženia
+                            dlhého vrchu, šaty bez rezu podľa dĺžky),
                             fit ("auto" | "off", voliteľné – "off" vypne
                             rozšírenie masky podľa strihu nohavíc; na porovnanie)
 
@@ -231,14 +234,16 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
         cloth_type, t_src = (detected, "rules") if detected else (CLOTH_TYPE_FALLBACK, "fallback")
 
     # 1) Nové oblečenie (CLIP): rukáv pre vrch aj celé, dĺžka pre vrch aj šaty
+    #    (clip="off" → nič z toho; maska AutoMaskera bez týchto úprav)
+    use_clip = options.get("clip", "auto") != "off"
     sleeves, s_conf, s_src = (None, 0.0, "-")
     length, l_conf, l_src = (None, 0.0, "-")
-    if cloth_type in ("upper", "overall"):
+    if use_clip and cloth_type in ("upper", "overall"):
         sleeves, s_conf, s_src = _classify(cloth_r, SLEEVE_PROMPTS, options.get("sleeves", "auto"))
-    if cloth_type == "upper":
+    if use_clip and cloth_type == "upper":
         length, l_conf, l_src = _classify(cloth_r, LENGTH_PROMPTS, options.get("length", "auto"))
     dress_length = None
-    if cloth_type == "overall":
+    if use_clip and cloth_type == "overall":
         length, l_conf, l_src = _classify(cloth_r, DRESS_LENGTH_PROMPTS, options.get("length", "auto"))
         dress_length = length if l_conf >= DRESS_LENGTH_MIN_CONFIDENCE else DRESS_LENGTH_FALLBACK
     # Strih nohavíc z fotky (vlastný algoritmus, bez modelu) – z pôvodnej fotky, nie
@@ -289,6 +294,7 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
         "seed": seed,
         "guidance_scale": guidance,
         "paste_face": paste_face,
+        "clip": "zapnutý" if use_clip else "vypnutý",
         "sleeves": _fmt(sleeves, s_conf, s_src),
         "length": _fmt(length, l_conf, l_src),
         "mask_changes": ", ".join(changes) or "-",
