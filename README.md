@@ -162,7 +162,7 @@ Vypíše typ (upper / lower / overall alebo „neisté“), dôvod a znaky silue
 
 Pod tlačidlom sú prepínače **Zobraziť masku** a **Respektovať strih** (vypni
 na porovnanie bez rozšírenia masky podľa strihu nohavíc; cez API je vždy
-zapnutý). Počet krokov (30), seed (42) a vloženie pôvodnej tváre sa v UI
+zapnutý). Počet krokov (50), seed (42) a vloženie pôvodnej tváre sa v UI
 nenastavujú – dajú sa zmeniť len cez API.
 
 ## API

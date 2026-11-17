@@ -59,7 +59,7 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
 | Súbor | Obsah |
 |---|---|
 | `app.py` | spustenie (argumenty `--share`, `--demo`, `--host`, `--port`), DEMO stub, adaptér `run_tryon()`, `build_app()` |
-| `config.py` | typy oblečenia, predvolené hodnoty (kroky 30, seed 42, …), farby, písma, všetky texty UI (slovensky) |
+| `config.py` | typy oblečenia, predvolené hodnoty (kroky 50, seed 42, …), farby, písma, všetky texty UI (slovensky) |
 | `ui/tabs.py` | hlavička a stránka skúšania (karty Osoba + Produkt = Výsledok, prepínače, skryté vstupy API) – bez tabov |
 | `ui/theme.py` | Gradio téma, CSS premenné z `config.COLORS`, `<head>` s písmami, vynútenie svetlého režimu |
 | `ui/styles.css`, `ui/page.css` | vzhľad komponentov a stránky |
@@ -86,13 +86,13 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
 - **Prepínače pod tlačidlom:** zobraziť masku, respektovať strih (predvolene
   zapnuté; vypnuté → `fit="off"`, maska bez rozšírenia podľa strihu). Posiela
   ho len UI, API `/try_on` ho nemá.
-- Kroky (30), seed (42) a vloženie tváre (áno) sú **skryté vstupy** – v UI sa
+- Kroky (50), seed (42) a vloženie tváre (áno) sú **skryté vstupy** – v UI sa
   nenastavujú, ale ostávajú vo vstupoch API `/try_on` (kontrakt sa nemení).
 - Generovanie beží po jednom (`concurrency_limit=1`), chyby a nedostatok
   pamäte GPU sa zobrazia ako upozornenie.
 - Priebeh: `gr.Progress(track_tqdm=True)` v `run_tryon` zachytí `tqdm` krokov
-  difúzie v pipeline CatVTON (bez úpravy jeho kódu) → percentá a krok X/30.
-  Odhad času v texte „Generujem…“ = `config.EXPECTED_SECONDS` (60 s na T4).
+  difúzie v pipeline CatVTON (bez úpravy jeho kódu) → percentá a krok X/50.
+  Odhad času v texte „Generujem…“ = `config.EXPECTED_SECONDS` (100 s na T4, 50 krokov).
 - **DEMO režim:** keď sa backend nedá načítať, v hlavičke je štítok „Demo“
   a výsledok je fotka osoby s nápisom „DEMO režim“.
 
@@ -147,7 +147,7 @@ režim.
 3. maska             AutoMasker (DensePose + SCHP) podľa typu
 4. úprava masky      tvar šiat, + rozšírenie (široké nohavice), − dlane
 5. blur okraja masky
-6. CatVTON           30–50 krokov difúzie – najdlhší krok
+6. CatVTON           50 krokov difúzie – najdlhší krok
 7. paste_face        mimo masky pôvodné pixely
 8. výstup            späť do pôvodnej veľkosti → UI; do konzoly „try_on: {...}“
 ```

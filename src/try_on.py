@@ -142,7 +142,7 @@ def _paste_back(original: Image.Image, generated: Image.Image, box) -> Image.Ima
 # --------------------------------------------------------------------------- #
 @torch.inference_mode()
 def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **options) -> dict:
-    steps = int(options.get("steps", 30))
+    steps = int(options.get("steps", 50))
     seed = int(options.get("seed", 42))
     paste_face = bool(options.get("paste_face", True))
     guidance = float(options.get("guidance_scale", GUIDANCE_SCALE))

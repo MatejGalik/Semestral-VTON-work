@@ -115,7 +115,7 @@ try_on(person_img, cloth_img, cloth_type, **options) -> dict
 |---|---|---|
 | `person_img`, `cloth_img` | `PIL.Image` | fotka osoby a oblečenia |
 | `cloth_type` | `"upper"` \| `"lower"` \| `"overall"` \| `"auto"` | ktorú časť tela maskovať; `"auto"` = typ určia pravidlá nad siluetou fotky oblečenia, bez AI (predvolené v UI) |
-| `steps` | `int` (predvolene 30) | počet krokov difúzie; CatVTON odporúča 50 |
+| `steps` | `int` (predvolene 50) | počet krokov difúzie (odporúčanie CatVTON; 30 → 50 od 2026-11-17, ~100 s na T4) |
 | `seed` | `int` (predvolene 42) | rovnaký seed = rovnaký výsledok |
 | `paste_face` | `bool` (predvolene `True`) | vrátiť pôvodné pixely mimo masky |
 | `guidance_scale` | `float` (predvolene 2.5) | voliteľné, UI ho zatiaľ neposiela |

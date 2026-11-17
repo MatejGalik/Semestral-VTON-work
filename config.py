@@ -17,13 +17,13 @@ CLOTH_TYPES = [
 DEFAULT_CLOTH_TYPE = "auto"
 
 # Generovanie – v UI sa nenastavuje (skryté vstupy API /try_on)
-STEPS_DEFAULT = 30
+STEPS_DEFAULT = 50  # odporúčanie CatVTON (lepšie detaily, ~100 s na T4)
 SEED_DEFAULT = 42  # -1 = náhodný seed
 PASTE_FACE_DEFAULT = True
 SHOW_MASK_DEFAULT = False
 RESPECT_FIT_DEFAULT = True  # rozšírenie masky podľa strihu (len UI, API vždy zapnuté)
 
-EXPECTED_SECONDS = 60  # orientačný čas generovania na GPU (Kaggle T4, 30 krokov)
+EXPECTED_SECONDS = 100  # orientačný čas generovania na GPU (Kaggle T4, 50 krokov)
 
 # --------------------------------------------------------------------------- #
 # Farby (zdieľané medzi ui/theme.py a ui/styles.css – CSS ich dostáva ako
