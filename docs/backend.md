@@ -572,13 +572,13 @@ voľnosti strihu**
 - V každom riadku od rozkroku po lem (pomery k šírke bokov osoby):
   - **voľnosť** = (nový pomer − priliehavé nohavice) / 0,12, orezané 0…1;
     priliehavé = profil skinny na fotke, lineárne 0,47 → 0,31 (`FIT_TIGHT`),
-  - **cieľ** = noha + voľnosť × (1,35 × nový pomer − noha)
+  - **cieľ** = noha + voľnosť × (1,25 × nový pomer − noha)
     (`FIT_LOOSE_SCALE`: voľná látka visí, na osobe je ~ako na fotke),
   - **rozdiel** = cieľ − pôvodné nohavice; vonkajší okraj sa posunie von
-    o celý rozdiel (`FIT_OUTER_SHARE` = 1; dnu je maska už medzi nohami).
+    o 85 % rozdielu (`FIT_OUTER_SHARE`; dnu je maska už medzi nohami).
 - Skinny → cieľ = noha → nič. Baggy na osobe v úzkych riflách → široko.
   Baggy na osobe v baggy → pôvodné sú už široké → málo / nič.
-- Strop 50 % bokov na stranu (`FIT_MAX_EXTRA`), okraj sa vyhladí (~8 % dĺžky nohy).
+- Strop 45 % bokov na stranu (`FIT_MAX_EXTRA`), okraj sa vyhladí (~8 % dĺžky nohy).
 - Pridá sa len to, čo nie je chránené: dlane a chodidlá (DensePose,
   roztiahnuté), vlasy, vrch, kabát, tvár, ruky, topánky (SCHP LIP aj ATR).
 - Ak prírastok plochy < 1 % (`FIT_MIN_GAIN`), maska sa nemení.
@@ -636,6 +636,12 @@ Kaggle: širšie nohavice? prepálené farby / artefakty pri vrchu a šatách?
 efekt bol už príliš silný → 3,1 → 2,8 → 2,6 – všetky hodnoty nad 2,5 dávali podobný, divný výsledok
 → **vrátené na 2,5**. Guidance scale tvar nohavíc nerieši; ďalší krok:
 nápoveda tvaru vo vnútri masky.
+
+**Príčina „divného“ výsledku (2026-11-17).** Aj s guidance 2,5 rovnaký
+výsledok ako s 3,5 → nespôsobovala ho guidance, ale súčasne zmenená širšia
+maska (+40 %, commit `5175e71`). Maska nastavená na stred: `FIT_LOOSE_SCALE`
+1,25, `FIT_OUTER_SHARE` 0,85, `FIT_MAX_EXTRA` 0,45 → zelené baggy +27 %
+(predtým +18 % „lepšie“, +40 % „príliš“), rovné +2 %, skinny 0 %.
 
 **Riziká / overiť na Kaggle.**
 

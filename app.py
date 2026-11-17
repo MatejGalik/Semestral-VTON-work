@@ -109,7 +109,7 @@ def _no_change(status: str = ""):
 
 
 def run_tryon(person_img, cloth_img, cloth_type, steps, seed, paste_face, show_mask,
-              respect_fit=True, progress=gr.Progress()):
+              respect_fit=True, progress=gr.Progress(track_tqdm=True)):
     """`respect_fit` posiela len UI (prepínač); API /try_on ho nemá → vždy zapnuté."""
     if person_img is None:
         _warn(T["err_no_person"])

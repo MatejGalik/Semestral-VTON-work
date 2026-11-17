@@ -90,6 +90,9 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
   nenastavujú, ale ostávajú vo vstupoch API `/try_on` (kontrakt sa nemení).
 - Generovanie beží po jednom (`concurrency_limit=1`), chyby a nedostatok
   pamäte GPU sa zobrazia ako upozornenie.
+- Priebeh: `gr.Progress(track_tqdm=True)` v `run_tryon` zachytí `tqdm` krokov
+  difúzie v pipeline CatVTON (bez úpravy jeho kódu) → percentá a krok X/30.
+  Odhad času v texte „Generujem…“ = `config.EXPECTED_SECONDS` (60 s na T4).
 - **DEMO režim:** keď sa backend nedá načítať, v hlavičke je štítok „Demo“
   a výsledok je fotka osoby s nápisom „DEMO režim“.
 

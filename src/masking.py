@@ -54,7 +54,7 @@ FIT_BG_TOLERANCE = 30                 # silueta: min. rozdiel farby od pozadia (
 FIT_WAIST_ROWS = 0.06                 # horných 6 % siluety (pás) sa pri šírke bokov preskočí
 FIT_DEFAULT_CROTCH = 0.35             # rozkrok, ak sa nohavice na fotke nerozdelia (podiel výšky)
 FIT_SAMPLES = 20                      # počet bodov profilu šírky (rozkrok → lem)
-FIT_MAX_EXTRA = 0.5                   # strop: okraj sa posunie max. o 50 % šírky bokov na stranu
+FIT_MAX_EXTRA = 0.45                  # strop: okraj sa posunie max. o 45 % šírky bokov na stranu
 FIT_MAX_PROFILE = 0.9                 # nohavica širšia ako 90 % bokov → nevierohodné
 FIT_MAX_JUMP = 0.2                    # skok šírky medzi susednými bodmi profilu → nevierohodné
 FIT_MIN_GAIN = 0.01                   # pod +1 % plochy masky sa maska nemení
@@ -62,8 +62,8 @@ FIT_MAX_CROTCH = 0.45                 # produkt: rozdelenie nižšie ako 45 % v�
                                       # prekrývajú → rozkrok = FIT_DEFAULT_CROTCH
 FIT_TIGHT = (0.47, 0.31)              # profil priliehavých nohavíc na fotke (rozkrok, lem)
 FIT_LOOSE_RANGE = 0.12                # o toľko širšie ako priliehavé = úplne voľné
-FIT_LOOSE_SCALE = 1.35                # voľná nohavica na osobe ≈ 1,35 × pomer z fotky × boky
-FIT_OUTER_SHARE = 1.0                 # podiel rozšírenia, ktorý ide von (dnu je maska už medzi nohami)
+FIT_LOOSE_SCALE = 1.25                # voľná nohavica na osobe ≈ 1,25 × pomer z fotky × boky
+FIT_OUTER_SHARE = 0.85                # podiel rozšírenia, ktorý ide von (dnu je maska už medzi nohami)
 FIT_LABELS = ((0.36, "úzke"), (0.46, "rovné"), (9.0, "široké"))  # podľa šírky lemu / bokov
 
 

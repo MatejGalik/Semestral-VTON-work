@@ -23,7 +23,7 @@ PASTE_FACE_DEFAULT = True
 SHOW_MASK_DEFAULT = False
 RESPECT_FIT_DEFAULT = True  # rozšírenie masky podľa strihu (len UI, API vždy zapnuté)
 
-EXPECTED_SECONDS = 15  # orientačný čas generovania na GPU
+EXPECTED_SECONDS = 60  # orientačný čas generovania na GPU (Kaggle T4, 30 krokov)
 
 # --------------------------------------------------------------------------- #
 # Farby (zdieľané medzi ui/theme.py a ui/styles.css – CSS ich dostáva ako
