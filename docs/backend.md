@@ -108,7 +108,7 @@ SCHP, difúzny model). 🟢 = klasický algoritmus, 🔵 = natrénovaný AI mode
 - Model postupne (`steps` krokov) odšumuje oblasť masky. Cez self-attention
   „kuká“ na oblečenie vedľa a prenáša jeho vzor, farbu a strih na telo
   (záhyby, tiene, póza).
-- `guidance_scale` 3,5 určuje, ako silno sa výsledok drží oblečenia (CatVTON
+- `guidance_scale` 3,1 určuje, ako silno sa výsledok drží oblečenia (CatVTON
   predvolene 2,5; zvýšené 2026-11-17, aby baggy nohavice vyšli širšie).
   `seed` zaručí opakovateľnosť.
 - *Bez AI:* TPS deformácia (warp) fotky oblečenia podľa bodov tela a vloženie
@@ -137,7 +137,7 @@ try_on(person_img, cloth_img, cloth_type, **options) -> dict
 | `steps` | `int` (predvolene 30) | počet krokov difúzie; CatVTON odporúča 50 |
 | `seed` | `int` (predvolene 42) | rovnaký seed = rovnaký výsledok |
 | `paste_face` | `bool` (predvolene `True`) | vrátiť pôvodné pixely mimo masky |
-| `guidance_scale` | `float` (predvolene 3.5) | voliteľné, UI ho zatiaľ neposiela |
+| `guidance_scale` | `float` (predvolene 3.1) | voliteľné, UI ho zatiaľ neposiela |
 | `sleeves` | `"auto"` \| `"short"` \| `"long"` \| `"sleeveless"` | voliteľné, ručné určenie rukávov namiesto CLIP (na testovanie); UI ho neposiela |
 | `length` | `"auto"` \| `"cropped"` \| `"regular"` \| `"long"` | voliteľné, ručné určenie dĺžky vrchu namiesto CLIP (na testovanie); UI ho neposiela |
 | `fit` | `"auto"` \| `"off"` | voliteľné, `"off"` vypne rozšírenie masky podľa strihu nohavíc (na porovnanie pred / po); UI ho posiela podľa prepínača „Respektovať strih“, API `/try_on` ho nemá (vždy `auto`) |
@@ -631,6 +631,9 @@ nič nevidí a tvar odhaduje z okolia (úzke boky, topánky pri sebe). Pokus:
 `guidance_scale` 2,5 → 3,5 (silnejšie držanie sa fotky oblečenia). Overiť na
 Kaggle: širšie nohavice? prepálené farby / artefakty pri vrchu a šatách?
 Ďalšia možnosť, ak nepomôže: nápoveda tvaru vo vnútri masky (úprava pipeline).
+
+**Výsledok na Kaggle (2026-11-17):** 3,5 baggy nohavice rozšírilo, ale
+efekt bol už príliš silný → kompromis **3,1**.
 
 **Riziká / overiť na Kaggle.**
 
