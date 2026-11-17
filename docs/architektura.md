@@ -19,7 +19,6 @@ UI alebo cez API (pre rozšírenie do prehliadača).
 | Obrázky | Pillow | načítanie, orezanie, maska v DEMO režime |
 | Model | **CatVTON** (`mix-48k-1024`) | virtuálne skúšanie – difúzny model na báze Stable Diffusion 1.5 inpainting |
 | Maskovanie | AutoMasker z CatVTON: **DensePose** (detectron2) + **SCHP**, upravený v `src/masking.py` | automatická maska oblasti, ktorá sa prekreslí |
-| Rukávy, dĺžka | **CLIP** (`openai/clip-vit-base-patch32`, zero-shot) | z fotky oblečenia určí rukáv (krátky / dlhý / bez) a dĺžku vrchu → ochrana rúk a predĺženie masky |
 | Typ oblečenia (auto) | vlastné pravidlá nad siluetou (OpenCV, numpy), **bez modelu**; pri neistote ručný výber | z fotky oblečenia určí `upper` / `lower` / `overall` |
 | Strih nohavíc | vlastný algoritmus (OpenCV, numpy), **bez modelu** | z fotky nohavíc zmeria profil šírky → rozšírenie masky pre široké nohavice |
 | ML knižnice | PyTorch, diffusers, transformers, accelerate | beh modelu na GPU (fp16) |
@@ -48,7 +47,7 @@ UI alebo cez API (pre rozšírenie do prehliadača).
                ▼
 ┌─────────────────────────────┐   ┌─────────────────────────────┐
 │ src/try_on.py (GPU)          │   │ _stub_try_on (DEMO, bez GPU) │
-│ CatVTON + maska + CLIP       │   │ fotka s nápisom + hrubá maska│
+│ CatVTON + maska              │   │ fotka s nápisom + hrubá maska│
 └─────────────────────────────┘   └─────────────────────────────┘
 ```
 
@@ -85,10 +84,8 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
   predvolene Automaticky – typ určia pravidlá a stavový riadok ho vypíše),
   tlačidlo Vyskúšať, stiahnutie výsledku (PNG).
 - **Prepínače pod tlačidlom:** zobraziť masku, respektovať strih (predvolene
-  zapnuté; vypnuté → `fit="off"`, maska bez rozšírenia podľa strihu),
-  rukávy a dĺžka (CLIP) (predvolene zapnuté; vypnuté → `clip="off"`, bez
-  ochrany rúk, predĺženia vrchu a rezu šiat podľa dĺžky). Oba posiela len UI,
-  API `/try_on` ich nemá.
+  zapnuté; vypnuté → `fit="off"`, maska bez rozšírenia podľa strihu). Posiela
+  ho len UI, API `/try_on` ho nemá.
 - Kroky (30), seed (42) a vloženie tváre (áno) sú **skryté vstupy** – v UI sa
   nenastavujú, ale ostávajú vo vstupoch API `/try_on` (kontrakt sa nemení).
 - Generovanie beží po jednom (`concurrency_limit=1`), chyby a nedostatok
@@ -137,7 +134,8 @@ Príklad volania cez `gradio_client` je v [README](../README.md#api).
 ```
 
 **Štart aplikácie** – raz sa načíta do GPU: SD 1.5 inpainting + CatVTON (fp16,
-bez NSFW filtra), AutoMasker (DensePose + SCHP), CLIP. Zlyhá backend → DEMO
+bez NSFW filtra), AutoMasker (DensePose + SCHP). CLIP sa od 2026-11-17
+nepoužíva. Zlyhá backend → DEMO
 režim.
 
 **Každé „Vyskúšať“ (`try_on()`):**
@@ -145,12 +143,9 @@ režim.
 ```
 1. predspracovanie   osoba → výrez 3:4, 768×1024; oblečenie → biely okraj
    typ oblečenia     len pri auto: pravidlá nad siluetou (bez AI), neisté → ručne
-2. CLIP              rukáv (upper / overall)
-                     + dĺžka vrchu (upper)
-   strih nohavíc     profil šírky z fotky nohavíc (lower, vlastný algoritmus)
+2. strih nohavíc     profil šírky z fotky nohavíc (lower, vlastný algoritmus)
 3. maska             AutoMasker (DensePose + SCHP) podľa typu
-4. úprava masky      + predĺženie (dlhý vrch), + rozšírenie (široké nohavice),
-                     − dlane (+ holé ruky pri krátkom rukáve)
+4. úprava masky      tvar šiat, + rozšírenie (široké nohavice), − dlane
 5. blur okraja masky
 6. CatVTON           30–50 krokov difúzie – najdlhší krok
 7. paste_face        mimo masky pôvodné pixely

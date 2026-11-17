@@ -160,10 +160,9 @@ Vypíše typ (upper / lower / overall alebo „neisté“), dôvod a znaky silue
    ručne: Vrchný diel / Spodný diel / Celé / šaty.
 3. Klikni **Vyskúšať**. Výsledok si stiahneš tlačidlom **Stiahnuť**.
 
-Pod tlačidlom sú prepínače **Zobraziť masku**, **Respektovať strih** (vypni
-na porovnanie bez rozšírenia masky podľa strihu nohavíc) a **Rukávy a dĺžka
-(CLIP)** (vypni, ak CLIP zle určí rukáv – napr. mikina s „vyhrnutými“
-rukávmi). Cez API sú oba posledné vždy zapnuté. Počet krokov (30), seed (42) a vloženie pôvodnej tváre sa v UI
+Pod tlačidlom sú prepínače **Zobraziť masku** a **Respektovať strih** (vypni
+na porovnanie bez rozšírenia masky podľa strihu nohavíc; cez API je vždy
+zapnutý). Počet krokov (30), seed (42) a vloženie pôvodnej tváre sa v UI
 nenastavujú – dajú sa zmeniť len cez API.
 
 ## API
@@ -215,7 +214,7 @@ ui/page.css           # globálne štýly stránky (vkladané do <head>)
 ui/tabs.py            # build_header(), build_tryon() – jedna stránka bez tabov
 assets/examples/      # ukážkové osoby a produkty (lokálne testy)
 src/try_on.py         # backend: CatVTON (potrebuje GPU)
-src/masking.py        # úprava masky: dĺžka vrchu, šaty, ochrana rúk, strih nohavíc
+src/masking.py        # úprava masky: tvar šiat, ochrana dlaní, strih nohavíc
 src/cloth_type.py     # typ oblečenia pravidlami nad siluetou (bez AI)
 scripts/analyza_strihu.py  # lokálny test analýzy strihu nohavíc (bez GPU)
 scripts/typ_oblecenia.py   # lokálny test rozpoznania typu oblečenia (bez GPU)

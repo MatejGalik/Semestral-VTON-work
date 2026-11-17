@@ -15,14 +15,11 @@ src/try_on.py: try_on()
    1b. typ oblečenia    – len pri cloth_type="auto": pravidlá nad siluetou
                           (src/cloth_type.py, bez AI); neisté → UI vyzve na
                           ručný výber (API → upper)
-   2. nové oblečenie    – CLIP z fotky oblečenia: rukáv (upper / overall),
-                          dĺžka vrchu (upper), dĺžka šiat (overall);
-                          strih nohavíc (lower) – vlastný algoritmus, bez modelu
+   2. strih nohavíc     – lower: profil šírky z fotky nohavíc (vlastný
+                          algoritmus, bez modelu)
    3. maska             – AutoMasker (DensePose + SCHP) podľa cloth_type
-   4. úprava masky      – src/masking.py: predĺženie (dlhý vrch), tvar
-                          a dĺžka šiat (overall), rozšírenie pre široké
-                          nohavice (lower), ochrana
-                          dlaní a pri krátkom rukáve aj holých rúk, potom
+   4. úprava masky      – src/masking.py: tvar šiat (overall), rozšírenie
+                          pre široké nohavice (lower), ochrana dlaní, potom
                           rozmazanie okraja (blur 9)
    5. generovanie       – CatVTONPipeline (SD 1.5 inpainting + attention váhy)
    6. paste_face        – mimo masky vráti pôvodné pixely (tvár, ruky, pozadie)
@@ -33,15 +30,14 @@ src/try_on.py: try_on()
 
 ## Kroky: algoritmus vs. AI model
 
-V projekte **nie je žiadne LLM**. Používame modely na obraz (CLIP, DensePose,
-SCHP, difúzny model). 🟢 = klasický algoritmus, 🔵 = natrénovaný AI model.
+V projekte **nie je žiadne LLM**. Používame len modely na obraz z CatVTON
+(DensePose, SCHP, difúzny model); CLIP bol odstránený 2026-11-17. 🟢 = klasický algoritmus, 🔵 = natrénovaný AI model.
 
 | # | Krok | Typ | Dá sa bez AI? |
 |---|---|---|---|
 | 1 | Predspracovanie | 🟢 | už je |
 | 1b | Typ oblečenia pri `auto` – pravidlá nad siluetou | 🟢 | už je |
-| 2 | Rukáv a dĺžka nového oblečenia (CLIP) | 🔵 | áno, silueta oblečenia (len na čistom pozadí) |
-| 2b | Strih nohavíc (`analyze_pants`) | 🟢 | už je |
+| 2 | Strih nohavíc (`analyze_pants`) | 🟢 | už je |
 | 3a | Póza / časti tela (DensePose) | 🔵 | nie |
 | 3b | Segmentácia (SCHP) | 🔵 | prakticky nie |
 | 3c | Zloženie masky (AutoMasker) | 🟢 | už je |
@@ -55,18 +51,6 @@ SCHP, difúzny model). 🟢 = klasický algoritmus, 🔵 = natrénovaný AI mode
   sa na 768×1024, na takom rozlíšení bol model trénovaný.
 - Oblečenie: zmenší sa tak, aby sa celé zmestilo do 768×1024, a zvyšok sa
   doplní bielym okrajom, takže sa z oblečenia nič neodreže.
-
-**2. Rukáv a dĺžka nového oblečenia 🔵** (`_clip_classify`)
-- CLIP (`clip-vit-base-patch32`) prevedie obrázok aj textové popisy na vektory
-  (embeddingy) a porovná ich podobnosť. Ide o zero-shot klasifikáciu: model sa
-  na našich dátach netrénoval, triedy sú zadané len textom.
-- Popisy tried: rukáv `short` / `long` / `sleeveless`, dĺžka vrchu `cropped` /
-  `regular` / `long`, dĺžka šiat `mini` / `knee` / `midi` / `maxi`.
-- Softmax nad podobnosťami určí víťaznú triedu a jej istotu. Pod prahom (0,6;
-  pri šatách 0,4) sa úprava masky nepoužije, šaty dostanú `knee`.
-- *Bez AI:* oddeliť oblečenie od bieleho pozadia prahom, z masky siluety
-  spočítať šírku po riadkoch (rukávy = široké „ramená“) a pomer výška/šírka
-  (dĺžka). Na fotke s rušným pozadím alebo oblečenia na človeku zlyhá.
 
 **3a. Póza / časti tela 🔵** (DensePose, v AutoMaskeri)
 - Neurónová sieť priradí každému pixelu osoby časť tela (trup, nadlaktie,
@@ -87,15 +71,12 @@ SCHP, difúzny model). 🟢 = klasický algoritmus, 🔵 = natrénovaný AI mode
   aby model mohol nakresliť iný strih.
 
 **4. Úprava masky 🟢** (`src/masking.py: adjust_mask`)
-- Dlhý vrch: pod trupom (ohraničujúci obdĺžnik trupu z DensePose) sa pridá
-  obdĺžnik, ktorý siaha o 35 % výšky trupu nižšie a o 15 % širšie.
-- Šaty: lem sa vypočíta z bodov DensePose (bok → koleno → členok) podľa dĺžky
-  šiat. Maska sa oreže na roztiahnuté telo plus obdĺžnik sukne od pása po lem.
-- Ochrana rúk: dlane (DensePose ∩ koža zo SCHP) sa vyrežú vždy. Pri krátkom
-  rukáve alebo bez rukávov sa vyreže aj všetka holá koža rúk.
-- Nohavice: profil šírky z fotky nohavíc (krok 2b) sa porovná s profilom
-  pôvodných nohavíc na osobe (SCHP); o rozdiel sa vonkajšie okraje masky
-  posunú von. Maska sa len rozširuje. Pozri „Rozšírenie masky podľa strihu nohavíc“.
+- Šaty: maska sa oreže na roztiahnuté telo (DensePose) plus obdĺžnik sukne
+  od pása nadol.
+- Ochrana dlaní: dlane (DensePose ∩ koža zo SCHP) sa vyrežú vždy. Holé ruky
+  sa nechránia, model môže nakresliť dlhý rukáv.
+- Nohavice: podľa voľnosti strihu z fotky (krok 2) sa určí cieľová šírka
+  a vonkajšie okraje masky sa posunú von. Maska sa len rozširuje. Pozri „Rozšírenie masky podľa strihu nohavíc“.
 - Nakoniec rozmazanie okraja (blur 9), aby nebol vidieť ostrý prechod.
 - Použité operácie: prieniky a zjednotenia binárnych máp (numpy), dilatácia
   (OpenCV), ohraničujúce obdĺžniky.
@@ -138,13 +119,10 @@ try_on(person_img, cloth_img, cloth_type, **options) -> dict
 | `seed` | `int` (predvolene 42) | rovnaký seed = rovnaký výsledok |
 | `paste_face` | `bool` (predvolene `True`) | vrátiť pôvodné pixely mimo masky |
 | `guidance_scale` | `float` (predvolene 2.5) | voliteľné, UI ho zatiaľ neposiela |
-| `sleeves` | `"auto"` \| `"short"` \| `"long"` \| `"sleeveless"` | voliteľné, ručné určenie rukávov namiesto CLIP (na testovanie); UI ho neposiela |
-| `length` | `"auto"` \| `"cropped"` \| `"regular"` \| `"long"` | voliteľné, ručné určenie dĺžky vrchu namiesto CLIP (na testovanie); UI ho neposiela |
-| `clip` | `"auto"` \| `"off"` | voliteľné, `"off"` vypne CLIP: bez ochrany rúk pri krátkom rukáve, bez predĺženia dlhého vrchu, šaty bez rezu podľa dĺžky (tvar tela ostáva); UI podľa prepínača „Rukávy a dĺžka (CLIP)“, API ho nemá (vždy `auto`) |
 | `fit` | `"auto"` \| `"off"` | voliteľné, `"off"` vypne rozšírenie masky podľa strihu nohavíc (na porovnanie pred / po); UI ho posiela podľa prepínača „Respektovať strih“, API `/try_on` ho nemá (vždy `auto`) |
 
 Návrat: `result` (výsledok v pôvodnom rozmere fotky), `mask` (upravená maska
-v pôvodnom rozmere), `info` (model, typ oblečenia – napr. `"lower (0.93, clip)"`, kroky, seed, rozlíšenie, GPU, čas, rukávy, dĺžka,
+v pôvodnom rozmere), `info` (model, typ oblečenia – napr. `"lower (rules)"`, kroky, seed, rozlíšenie, GPU, čas,
 vykonané úpravy masky, podiel masky, chránené časti, strih nohavíc). `info` UI nezobrazuje – vypisuje sa do konzoly ako
 `try_on: {...}` (na Kaggle vo výstupe poslednej bunky).
 
@@ -241,9 +219,6 @@ Model sa načíta **raz pri importe** modulu, nie pri každom volaní:
    `booksforcharlie/stable-diffusion-inpainting` (pôvodný `runwayml` repozitár
    bol zmazaný; rovnakú kópiu používa oficiálne demo CatVTON).
 5. `AutoMasker` s váhami DensePose a SCHP.
-6. CLIP (`openai/clip-vit-base-patch32`, fp16) na určenie rukáva a dĺžky
-   nového oblečenia. Ak sa nenačíta, backend beží ďalej s maskou AutoMaskera
-   (chráni len dlane, nepredlžuje; varovanie v konzole).
 
 Prvé spustenie sťahuje niekoľko GB váh a dlho nič nevypisuje – nie je
 zaseknuté. Po načítaní sa vypíše `CatVTON pripravený za … s (GPU, dtype)`.
@@ -258,9 +233,8 @@ zaseknuté. Po načítaní sa vypíše `CatVTON pripravený za … s (GPU, dtype
 | **fp16 na T4/P100**, bf16 len pri compute capability ≥ 8 | pozri „OOM na T4“ nižšie |
 | `paste_face` = `repaint_result` z CatVTON | jednoduché a funkčné: tvár a pozadie zostanú ostré a pôvodné |
 | Výsledok sa vracia v pôvodnom rozmere fotky | sedí s UI; vygenerovaný výrez sa vloží späť do originálu |
-| Ochrana rúk podľa rukáva nového oblečenia (CLIP), nie podľa fotky osoby | chráni sa len holá koža podľa SCHP, takže stačí poznať nové oblečenie; pozri „Ochrana rúk“ |
 | Maska z **AutoMaskera** (SCHP + DensePose), Sapiens-seg vyskúšaný a odstránený | CatVTON bol trénovaný s maskami AutoMaskera; pri rukách pri tele je SCHP spoľahlivý; pozri „Sapiens-seg – vyskúšaný a odstránený“ |
-| Maska sa upravuje podľa **nového** oblečenia (rukáv, dĺžka – CLIP) | rieši zmenu strihu (krátky ↔ dlhý rukáv, tunika) bez ďalšieho modelu; pozri „Úprava masky podľa nového oblečenia“ |
+| **Bez CLIP** (odstránený 2026-11-17) | ochrana rúk pri krátkom rukáve a predĺženie / rez podľa dĺžky viac škodili, ako pomáhali (tričká aj mikiny vyzerali bez CLIP lepšie); jeden model menej na GPU; pozri „Odstránené: CLIP“ |
 | NSFW filter SD vypnutý (`skip_safety_check=True`) | falošné poplachy pri koži / rukách na hrudi; ušetrí aj VRAM. Pozor: odkaz `--share` je verejný |
 | Torch sa v `requirements-gpu.txt` nepripína | Kaggle má torch s CUDA predinštalovaný, preinštalovanie by ho rozbilo |
 
@@ -388,152 +362,58 @@ nohaviciam (sekcia nižšie). Pozitívne zistenie: model tvar masky poslúcha.
 **Mikina s „vyhrnutými“ rukávmi (2026-11-17).** Mikina (`upper`) na osobe
 v tričku s krátkym rukávom vyšla, akoby mala vyhrnuté rukávy. Podozrenie:
 CLIP určil krátky rukáv → holé ruky sa chránili (vyrezali z masky) → model
-nemal kam nakresliť dlhý rukáv. Overiť v `info` (`sleeves`, `protected`).
-Pridaný prepínač **Rukávy a dĺžka (CLIP)** (`clip="off"`) na porovnanie.
+nemal kam nakresliť dlhý rukáv. Pridaný prepínač `clip="off"` – aj bez CLIP
+rukáv len po lakeť, hoci maska pokrývala celé ruky → **obmedzenie modelu**
+(holé predlaktia pri tele si model „nechá“). Tričká však bez CLIP vyzerali
+lepšie → CLIP odstránený (sekcia „Odstránené: CLIP“).
 
 **Možné rozmazanie pri veľkých fotkách.** Výsledok vzniká v 768×1024 a pri
 vložení späť do veľkej fotky (napr. 3000×4000) sa zväčšuje. Pri zapnutom
 `paste_face` je okolie ostrý originál, takže rozdiel je viditeľný. Zatiaľ
 neriešené.
 
-## Ochrana rúk podľa dĺžky rukáva
+## Odstránené: CLIP (rukávy, dĺžka) – 2026-11-17
 
-_Stav: **implementované 2026-11-03, čaká na test na Kaggle.**_
+Od 2026-11-06 do 2026-11-17 backend používal **CLIP**
+(`openai/clip-vit-base-patch32`, zero-shot) na tri úpravy masky podľa fotky
+nového oblečenia:
 
-**Problém.** Maska pre `upper` zakrýva trup aj celé ruky. Pri prekrížených
-rukách (ruky ležia na hrudi) ich model musí nakresliť nanovo a vzniká rozmazaný
-chaos.
+- **rukáv** krátky / dlhý / bez → pri krátkom a bez rukávov sa z masky vyrezala
+  holá koža rúk (SCHP), aby model nedokreslil pôvodný dlhý rukáv,
+- **dĺžka vrchu** → pri dlhom (tunika) sa maska predĺžila o obdĺžnik cez boky,
+- **dĺžka šiat** mini / po kolená / midi / maxi → maska šiat sa orezala pri leme
+  (body DensePose bok → koleno → členok).
 
-**Riešenie.** Z masky AutoMaskera sa vyrežú časti, ktoré sa meniť nemajú,
-a `paste_face` ich vráti z pôvodnej fotky:
+**Prečo odstránený.** Na Kaggle vyzerali tričká aj mikiny bez CLIP lepšie
+(test s prepínačom `clip="off"`). Chybné určenie rukáva vyrezalo ruky z masky,
+dĺžky boli na produktových fotkách nespoľahlivé. Navyše jeden model menej
+na GPU a rýchlejší štart. Typ oblečenia aj strih nohavíc sa už určujú vlastnými
+pravidlami bez AI.
 
-- **dlane – vždy**: DensePose (triedy 3, 4) ∩ koža rúk podľa SCHP. AutoMasker
-  dlane chráni aj sám, no jeho záverečné roztiahnutie masky do nich zasahuje –
-  tu sa vyrežú až po ňom.
-- **holá koža rúk – len ak nové oblečenie má krátky rukáv alebo je bez rukávov**:
-  SCHP LIP aj ATR (triedy 14, 15 = Left-arm, Right-arm).
-
-Netreba zisťovať, aký rukáv má osoba na fotke: chráni sa len holá koža. Ak má
-osoba dlhý rukáv, holej kože je málo a rukáv sa prekreslí ako doteraz.
-Chránená oblasť sa roztiahne o 2 iterácie (jadro 5×5), aby do nej nezasahoval
-rozmazaný okraj masky.
-
-**Dĺžka rukáva – CLIP (zero-shot).** `openai/clip-vit-base-patch32` (~600 MB)
-porovná fotku oblečenia s textami pre `short` / `long` / `sleeveless`
-(`SLEEVE_PROMPTS` v `src/try_on.py`) a vráti najpodobnejší s istotou. Pri
-istote < 0,6 (`SLEEVE_MIN_CONFIDENCE`) sa holé ruky nechránia, dlane áno.
-Voľba `sleeves="short"` atď. obíde CLIP (na testovanie).
-
-**Kedy čo beží** (`try_on()`):
-
-```
-pri štarte:   CatVTON + AutoMasker + CLIP sa načítajú raz do GPU
-pri volaní:
-1. predspracovanie       osoba a oblečenie → 768×1024
-2. CLIP                  rukáv (krátky / dlhý / bez) + dĺžka vrchu   ~0,1 s
-3. AutoMasker            fotka osoby → maska + DensePose + SCHP
-4. úprava masky          + predĺženie, − dlane − (holé ruky), potom blur
-5. CatVTON               osoba + oblečenie + upravená maska         najdlhší krok
-6. paste_face            mimo masky vráti originál → ruky pôvodné
-7. späť do pôvodnej veľkosti
-```
-
-- Kroky 2 a 3 sú nezávislé, spája ich až krok 4.
-- Pri `lower` sa kroky 2 a 4 preskočia – maska pre spodok ruky nezahŕňa.
-- Masky DensePose a SCHP vracia AutoMasker (`densepose`, `schp_lip`,
-  `schp_atr`), nič sa nepočíta navyše okrem CLIP.
-
-**Výstup.** V `info` (konzola): `"sleeves": "short (0.87)"`,
-`"sleeves_source": "clip"`, `"protected": "dlane, ruky"`. UI zobrazí upravenú
-masku (prepínač „zobraziť masku“). UI ani API `/try_on` sa nemení.
-
-**Overenie (treba spraviť).** ~10 fotiek s rukami pri tele × krátky a dlhý
-rukáv, porovnanie pred / po s rovnakým seedom.
-Vhodné na obhajobu a pre tab `compare_masks` (flag v `config.FEATURES`).
-
-**Riziká.**
-
-- CLIP sa pomýli pri zložených / pokrčených kúskoch → istota v `info`, neskôr
-  ručný prepínač v UI.
-- SCHP zle označí kožu (napr. tričko v telovej farbe).
-- Dlhý rukáv + prekrížené ruky: pomôže sa len dlaniam, rukávy model kreslí sám.
-- Náklady: ~600 MB VRAM navyše, zlomok sekundy na volanie.
-
-## Úprava masky podľa nového oblečenia (dĺžka)
-
-_Stav: **implementované 2026-11-06, čaká na test na Kaggle.**_
-
-**Problém.** Maska AutoMaskera vychádza z oblečenia, ktoré má osoba na fotke.
-Keď je nové oblečenie iného strihu, model nemá kam kresliť: dlhá tunika cez
-krátke tričko skončí v páse.
-
-**1. Dĺžka vrchu – CLIP (len `upper`).** `LENGTH_PROMPTS` v `src/try_on.py`:
-`cropped` / `regular` / `long`. Pri `long` s istotou ≥ 0,6
-(`LENGTH_MIN_CONFIDENCE`) `masking.adjust_mask` pridá do masky obdĺžnik pod
-trupom podľa DensePose: od polovice trupu o 35 % jeho výšky nižšie
-(`LONG_EXTEND`) a o 15 % šírky do strán (`LONG_SIDE_MARGIN`). Dlane, pri
-krátkom rukáve aj holé ruky, sa vyrežú až potom, takže ruky pri bokoch ostanú.
-`cropped` masku **neskracuje** – staré oblečenie musí byť v maske celé, inak by
-ho `paste_face` vrátil. Voľba `length="long"` obíde CLIP.
-
-**Poradie v `adjust_mask`:** predĺženie → ochrana rúk (dlane vždy, holé ruky
-pri krátkom rukáve / bez rukávov). Pri `lower` sa maska nemení.
-
-Posuvník šírky masky bol skúšaný a odstránený – pozri Zistenia.
-
-**Výstup v `info`:** `"length": "long (0.74, clip)"`,
-`"mask_changes": "predĺžená"`, `"mask_ratio": 0.31`.
-
-**Riziká / overiť na Kaggle.**
-
-- CLIP pri dĺžke na produktovej fotke (bez postavy) – istota v `info`; ak sa
-  často mýli, ručný prepínač v UI.
-- Predĺženie je obdĺžnik – pri tunike cez nohavice sa prekreslí aj časť
-  nohavíc a pozadia (zámerne, model tam nakreslí tuniku alebo pozadie).
+**Čo ostalo:** ochrana dlaní (vždy), tvar šiat (bez rezu podľa dĺžky).
 
 ## Maska pre šaty (`overall`)
 
-_Stav: **implementované 2026-11-09, čaká na test na Kaggle.**_
+_Stav: **implementované 2026-11-09; rez podľa dĺžky odstránený 2026-11-17 (bez CLIP).**_
 
 **Problém.** Pozri Zistenia „Šaty na mužovi“ – maska AutoMaskera po členky
 a so siluetou kabáta → nohavice a kardigán namiesto krátkych šiat.
 
-**1. Dĺžka šiat – CLIP.** `DRESS_LENGTH_PROMPTS` v `src/try_on.py`:
-`mini` / `knee` / `midi` / `maxi`. Pri istote < 0,4
-(`DRESS_LENGTH_MIN_CONFIDENCE`, 4 triedy) sa použije `knee`
-(`DRESS_LENGTH_FALLBACK`). Voľba `length="mini"` atď. obíde CLIP.
-
-**2. Lem podľa DensePose** (`masking._dress_shape`, `DRESS_HEM`): bok = spodok
-trupu, koleno = vrch lýtok, členok = spodok lýtok.
-
-| dĺžka | lem |
-|---|---|
-| mini | bok + 60 % stehna |
-| knee | koleno + 10 % lýtka |
-| midi | koleno + 50 % lýtka |
-| maxi | bez rezu |
-
-\+ rezerva 5 % výšky trupu. Pod lemom maska končí → nohy (aj nohavice)
-ostanú z pôvodnej fotky. Ak DensePose nenájde nohy, dĺžka sa nemení.
-
-**3. Tvar tela.** Maska AutoMaskera sa oreže na povolenú oblasť:
+**Tvar tela.** Maska AutoMaskera sa oreže na povolenú oblasť:
 DensePose trup + ruky + nohy roztiahnuté o ~25 px (`DRESS_BODY_DIVISOR`)
-\+ obdĺžnik sukne od ¾ trupu po lem, širší o 25 % šírky trupu na každú stranu
+\+ obdĺžnik sukne od ¾ trupu nadol, širší o 25 % šírky trupu na každú stranu
 (`DRESS_SKIRT_MARGIN`, priestor pre áčkový strih). Masku len zmenšuje, nikdy
 nepridáva.
 
-**4. Ochrana dlaní pri odhalených rukách.** Ak má nové oblečenie krátky rukáv /
-je bez rukávov, chránená oblasť sa roztiahne len o 1 iteráciu (inak 2) – aby
-pri dlani neostala manžeta pôvodného rukáva.
+Rez pri leme podľa dĺžky šiat (CLIP) bol odstránený 2026-11-17 – maska
+siaha po celej dĺžke tela, dĺžku šiat určí model z fotky.
 
-**Výstup v `info`:** `"length": "mini (0.62, clip)"`,
-`"mask_changes": "šaty: mini"`.
+**Výstup v `info`:** `"mask_changes": "šaty: tvar tela"`.
 
 **Riziká / overiť na Kaggle.**
 
 - Tesnejšia maska môže „stiahnuť“ šaty k telu (poučenie zo Sapiens) – ak áno,
   zväčšiť `DRESS_BODY_DIVISOR` / `DRESS_SKIRT_MARGIN`.
-- CLIP pri dĺžke šiat – istota v `info`.
 - Pôvodné voľné oblečenie mimo roztiahnutého tela (široký kabát) ostane.
 
 ## Rozšírenie masky podľa strihu nohavíc (`lower`)
@@ -663,14 +543,14 @@ maska (+40 %, commit `5175e71`). Maska nastavená na stred: `FIT_LOOSE_SCALE`
 
 ## Plánované vylepšenia
 
-1. Otestovať na Kaggle ochranu rúk a predĺženie pre dlhý vrch (~10 fotiek
-   s rukami pri tele; krátky ↔ dlhý rukáv, tričko → tunika), masku pre šaty
-   (mini / po kolená / maxi, muž aj žena), rozšírenie masky pre široké
+1. Otestovať na Kaggle masku pre šaty (mini / po kolená / maxi, muž aj žena,
+   bez rezu podľa dĺžky), rozšírenie masky pre široké
    nohavice (`fit="auto"` vs. `"off"`, rovnaký seed) a automatické
    rozpoznanie typu (`cloth_type="auto"`, ~15 fotiek vrch / spodok / šaty)
    a výsledky zapísať do Zistení.
-2. Ručný prepínač rukávov a dĺžky (auto / …) v UI, ak sa CLIP často mýli.
+2. Nápoveda tvaru vo vnútri masky (hrubá silueta vo farbe produktu) – baggy
+   nohavice a dlhé rukávy, ktoré model kreslí užšie / kratšie, než dovoľuje maska.
 3. Ručná úprava masky v UI (štetec) – CatVTON vlastnú masku podporuje.
 4. Riešenie rozmazania pri veľkých fotkách (nezväčšovať výsledok / voľba
    „vrátiť v rozlíšení modelu“).
-5. Porovnanie s iným modelom (IDM-VTON) – flag `compare_models` v `config.py`.
+5. Porovnanie s iným modelom (IDM-VTON).

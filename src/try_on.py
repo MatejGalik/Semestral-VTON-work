@@ -10,22 +10,13 @@ Kontrakt (používa ho app.py a API /try_on):
                             sú isté → "upper"; zistený typ je v info["cloth_type"])
     options               : steps (int), seed (int), paste_face (bool),
                             guidance_scale (float, voliteľné),
-                            sleeves ("auto" | "short" | "long" | "sleeveless",
-                            voliteľné – ručné určenie rukávov namiesto CLIP),
-                            length ("auto" | "cropped" | "regular" | "long" pre vrch,
-                            "mini" | "knee" | "midi" | "maxi" pre šaty,
-                            voliteľné – ručné určenie dĺžky namiesto CLIP),
-                            clip ("auto" | "off", voliteľné – "off" vypne CLIP:
-                            bez ochrany rúk pri krátkom rukáve, bez predĺženia
-                            dlhého vrchu, šaty bez rezu podľa dĺžky),
                             fit ("auto" | "off", voliteľné – "off" vypne
                             rozšírenie masky podľa strihu nohavíc; na porovnanie)
 
-Maska: AutoMasker z CatVTON (DensePose + SCHP), upravená v src/masking.py podľa
-nového oblečenia (CLIP): dlhý vrch → maska siaha nižšie; krátky rukáv / bez
-rukávov → holé ruky sa chránia; dlane sa chránia vždy; šaty (overall) →
-maska končí pri leme podľa dĺžky šiat a drží sa tvaru tela; nohavice (lower) →
-strih sa zmeria z fotky nohavíc (bez modelu) a široké nohavice rozšíria masku.
+Maska: AutoMasker z CatVTON (DensePose + SCHP), upravená v src/masking.py:
+dlane sa chránia vždy; šaty (overall) → maska sa drží tvaru tela; nohavice
+(lower) → strih sa zmeria z fotky nohavíc (bez modelu) a široké nohavice
+rozšíria masku. Žiadny ďalší AI model okrem CatVTON, DensePose a SCHP.
 
 Model sa načíta raz pri importe. Bez CUDA import zlyhá a app.py sa prepne
 do DEMO režimu. Kód CatVTON nie je v repe – očakáva sa naklonovaný v adresári
@@ -55,29 +46,7 @@ ATTN_VERSION = "mix"                          # váhy mix-48k-1024
 GUIDANCE_SCALE = 2.5                          # predvolená hodnota z CatVTON (vyššie skúšané, horšie)
 MASK_BLUR = 9                                 # rozmazanie okraja masky (ako v CatVTON demo)
 
-# Úprava masky podľa nového oblečenia (CLIP zero-shot)
-CLIP_MODEL = "openai/clip-vit-base-patch32"
 CLOTH_TYPE_FALLBACK = "upper"                 # cloth_type="auto", keď pravidlá nie sú isté
-SLEEVE_PROMPTS = {                            # trieda → popis pre CLIP (zero-shot)
-    "short": "a product photo of a short-sleeved top, t-shirt or dress",
-    "long": "a product photo of a long-sleeved top, shirt, sweater, jacket or dress",
-    "sleeveless": "a product photo of a sleeveless top, tank top or strapless dress",
-}
-SLEEVE_MIN_CONFIDENCE = 0.6                   # pod touto istotou sa ruky nechránia
-LENGTH_PROMPTS = {                            # dĺžka vrchu
-    "cropped": "a product photo of a cropped top that ends above the waist",
-    "regular": "a product photo of a regular-length top or t-shirt that ends at the waist",
-    "long": "a product photo of a long top, tunic, long sweater or coat that covers the hips",
-}
-LENGTH_MIN_CONFIDENCE = 0.6                   # pod touto istotou sa maska nepredĺži
-DRESS_LENGTH_PROMPTS = {                      # dĺžka šiat (overall)
-    "mini": "a product photo of a short mini dress that ends mid-thigh",
-    "knee": "a product photo of a knee-length dress",
-    "midi": "a product photo of a midi dress that ends at the calf",
-    "maxi": "a product photo of a long maxi dress or jumpsuit that reaches the ankles",
-}
-DRESS_LENGTH_MIN_CONFIDENCE = 0.4             # 4 triedy; pod touto istotou → DRESS_LENGTH_FALLBACK
-DRESS_LENGTH_FALLBACK = "knee"
 
 
 def _find_catvton_dir() -> Path:
@@ -145,17 +114,6 @@ _mask_processor = VaeImageProcessor(
     vae_scale_factor=8, do_normalize=False, do_binarize=True, do_convert_grayscale=True
 )
 
-# CLIP na určenie rukáva a dĺžky. Ak sa nenačíta, backend beží ďalej
-# s maskou AutoMaskera (chráni len dlane, nepredlžuje).
-try:
-    from transformers import CLIPModel, CLIPProcessor
-
-    _clip_model = CLIPModel.from_pretrained(CLIP_MODEL, torch_dtype=torch.float16).to(_DEVICE).eval()
-    _clip_processor = CLIPProcessor.from_pretrained(CLIP_MODEL)
-except Exception as exc:  # noqa: BLE001
-    log.warning("CLIP sa nepodarilo načítať, ruky sa nebudú chrániť podľa rukávov: %s", exc)
-    _clip_model = _clip_processor = None
-
 log.info("CatVTON pripravený za %.1f s (%s, %s)", time.perf_counter() - _t0, _GPU_NAME, _DTYPE)
 
 
@@ -177,32 +135,6 @@ def _paste_back(original: Image.Image, generated: Image.Image, box) -> Image.Ima
     canvas = original.copy()
     canvas.paste(generated.resize((box[2] - box[0], box[3] - box[1]), Image.LANCZOS), box[:2])
     return canvas
-
-
-def _clip_classify(cloth: Image.Image, prompts: dict[str, str]) -> tuple[str | None, float]:
-    """CLIP zero-shot: najpodobnejší kľúč z `prompts` a istota (0–1)."""
-    if _clip_model is None:
-        return None, 0.0
-    labels = list(prompts)
-    inputs = _clip_processor(
-        text=[prompts[k] for k in labels], images=cloth, return_tensors="pt", padding=True
-    ).to(_DEVICE)
-    inputs["pixel_values"] = inputs["pixel_values"].half()
-    probs = _clip_model(**inputs).logits_per_image.softmax(dim=-1)[0].float().cpu()
-    best = int(probs.argmax())
-    return labels[best], float(probs[best])
-
-
-def _classify(cloth: Image.Image, prompts: dict[str, str], manual) -> tuple[str | None, float, str]:
-    """Ručná hodnota má prednosť pred CLIP. Vráti (trieda, istota, zdroj)."""
-    if manual in prompts:
-        return manual, 1.0, "manual"
-    label, conf = _clip_classify(cloth, prompts)
-    return label, conf, "clip"
-
-
-def _fmt(label: str | None, conf: float, source: str) -> str:
-    return f"{label} ({conf:.2f}, {source})" if label else "-"
 
 
 # --------------------------------------------------------------------------- #
@@ -228,39 +160,23 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
 
     # 0) Typ oblečenia: ručne zvolený, alebo pri "auto" pravidlami nad siluetou
     #    (bez AI; z pôvodnej fotky – s alfa kanálom, ak ho má)
-    t_conf, t_src, t_reason = 1.0, "manual", "-"
+    t_src, t_reason = "manual", "-"
     if cloth_type == "auto":
         detected, t_reason = cloth_rules.classify(cloth_img)
         cloth_type, t_src = (detected, "rules") if detected else (CLOTH_TYPE_FALLBACK, "fallback")
 
-    # 1) Nové oblečenie (CLIP): rukáv pre vrch aj celé, dĺžka pre vrch aj šaty
-    #    (clip="off" → nič z toho; maska AutoMaskera bez týchto úprav)
-    use_clip = options.get("clip", "auto") != "off"
-    sleeves, s_conf, s_src = (None, 0.0, "-")
-    length, l_conf, l_src = (None, 0.0, "-")
-    if use_clip and cloth_type in ("upper", "overall"):
-        sleeves, s_conf, s_src = _classify(cloth_r, SLEEVE_PROMPTS, options.get("sleeves", "auto"))
-    if use_clip and cloth_type == "upper":
-        length, l_conf, l_src = _classify(cloth_r, LENGTH_PROMPTS, options.get("length", "auto"))
-    dress_length = None
-    if use_clip and cloth_type == "overall":
-        length, l_conf, l_src = _classify(cloth_r, DRESS_LENGTH_PROMPTS, options.get("length", "auto"))
-        dress_length = length if l_conf >= DRESS_LENGTH_MIN_CONFIDENCE else DRESS_LENGTH_FALLBACK
-    # Strih nohavíc z fotky (vlastný algoritmus, bez modelu) – z pôvodnej fotky, nie
+    # 1) Strih nohavíc z fotky (vlastný algoritmus, bez modelu) – z pôvodnej fotky, nie
     # z cloth_r, aby biely okraj nemenil farbu pozadia
     pants_fit = None
     if cloth_type == "lower" and options.get("fit", "auto") != "off":
         pants_fit = masking.analyze_pants(cloth_img)
 
-    # 2) Maska AutoMaskera + úpravy (predĺženie, ochrana rúk, rozšírenie nohavíc)
+    # 2) Maska AutoMaskera + úpravy (tvar šiat, ochrana dlaní, rozšírenie nohavíc)
     masker_out = _automasker(person_r, cloth_type)
     mask, protected, changes = masking.adjust_mask(
         masker_out["mask"],
         masker_out,
         cloth_type,
-        protect_arms=sleeves in ("short", "sleeveless") and s_conf >= SLEEVE_MIN_CONFIDENCE,
-        long_garment=cloth_type == "upper" and length == "long" and l_conf >= LENGTH_MIN_CONFIDENCE,
-        dress_length=dress_length,
         pants_fit=pants_fit,
     )
     mask_soft = _mask_processor.blur(mask, blur_factor=MASK_BLUR)
@@ -288,15 +204,12 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
 
     info = {
         "model": "CatVTON mix-48k-1024",
-        "cloth_type": _fmt(cloth_type, t_conf, t_src),
+        "cloth_type": f"{cloth_type} ({t_src})",
         "cloth_type_reason": t_reason,
         "steps": steps,
         "seed": seed,
         "guidance_scale": guidance,
         "paste_face": paste_face,
-        "clip": "zapnutý" if use_clip else "vypnutý",
-        "sleeves": _fmt(sleeves, s_conf, s_src),
-        "length": _fmt(length, l_conf, l_src),
         "mask_changes": ", ".join(changes) or "-",
         "mask_ratio": masking.mask_ratio(mask),
         "protected": ", ".join(protected) or "-",

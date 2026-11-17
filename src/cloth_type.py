@@ -1,7 +1,7 @@
 """Typ oblečenia z produktovej fotky pravidlami nad siluetou – bez AI.
 
 classify(cloth) -> (typ, dôvod) alebo (None, dôvod), keď si pravidlá nie sú isté
-(vtedy src/try_on.py použije CLIP). Typ: "upper" | "lower" | "overall".
+(vtedy UI vyzve na ručný výber, API použije "upper"). Typ: "upper" | "lower" | "overall".
 
 Postup:
 1. silueta (masking.silhouette) – predpokladá jednoliate pozadie,
