@@ -67,8 +67,13 @@ def _stub_try_on(person_img, cloth_img, cloth_type, **options) -> dict:
               font=font, fill=(255, 255, 255, 255))
     img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
 
-    if cloth_type == "auto":
-        cloth_type = "upper"  # DEMO nemá CLIP – ako fallback backendu
+    if cloth_type == "auto":  # DEMO nemá CLIP – len pravidlá (ak je OpenCV), inak "upper"
+        try:
+            from src.cloth_type import classify
+
+            cloth_type = classify(cloth_img)[0] or "upper"
+        except Exception:
+            cloth_type = "upper"
     region = {"upper": (0.18, 0.55), "lower": (0.45, 0.95), "overall": (0.18, 0.95)}
     y0, y1 = region.get(cloth_type, (0.18, 0.95))
     mask = Image.new("L", img.size, 0)

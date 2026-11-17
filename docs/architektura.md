@@ -20,6 +20,7 @@ UI alebo cez API (pre rozšírenie do prehliadača).
 | Model | **CatVTON** (`mix-48k-1024`) | virtuálne skúšanie – difúzny model na báze Stable Diffusion 1.5 inpainting |
 | Maskovanie | AutoMasker z CatVTON: **DensePose** (detectron2) + **SCHP**, upravený v `src/masking.py` | automatická maska oblasti, ktorá sa prekreslí |
 | Rukávy, dĺžka | **CLIP** (`openai/clip-vit-base-patch32`, zero-shot) | z fotky oblečenia určí rukáv (krátky / dlhý / bez) a dĺžku vrchu → ochrana rúk a predĺženie masky |
+| Typ oblečenia (auto) | vlastné pravidlá nad siluetou (OpenCV, numpy), **bez modelu**; pri neistote CLIP | z fotky oblečenia určí `upper` / `lower` / `overall` |
 | Strih nohavíc | vlastný algoritmus (OpenCV, numpy), **bez modelu** | z fotky nohavíc zmeria profil šírky → rozšírenie masky pre široké nohavice |
 | ML knižnice | PyTorch, diffusers, transformers, accelerate | beh modelu na GPU (fp16) |
 | Váhy | Hugging Face Hub (`huggingface_hub`) | sťahovanie váh CatVTON a SD inpainting |
@@ -65,7 +66,9 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
 | `ui/styles.css`, `ui/page.css` | vzhľad komponentov a stránky |
 | `src/try_on.py` | backend s CatVTON ([backend.md](backend.md)) |
 | `src/masking.py` | úprava masky AutoMaskera: predĺženie pre dlhý vrch, tvar šiat, ochrana rúk, analýza strihu nohavíc a rozšírenie masky pre široké nohavice |
+| `src/cloth_type.py` | typ oblečenia pravidlami nad siluetou (bez AI) pre `cloth_type="auto"` |
 | `scripts/analyza_strihu.py` | lokálny test analýzy strihu nohavíc (bez GPU) |
+| `scripts/typ_oblecenia.py` | lokálny test rozpoznania typu oblečenia (bez GPU) |
 | `assets/examples/` | ukážkové osoby (`person_*.png`) a oblečenie (`cloth_*.png`) |
 | `kaggle/run.ipynb` | spúšťač na Kaggle |
 | `requirements.txt` / `requirements-gpu.txt` | závislosti UI / backendu |
@@ -135,7 +138,8 @@ režim.
 
 ```
 1. predspracovanie   osoba → výrez 3:4, 768×1024; oblečenie → biely okraj
-2. CLIP              typ oblečenia (len pri auto), rukáv (upper / overall)
+   typ oblečenia     len pri auto: pravidlá nad siluetou, pri neistote CLIP
+2. CLIP              rukáv (upper / overall)
                      + dĺžka vrchu (upper)
    strih nohavíc     profil šírky z fotky nohavíc (lower, vlastný algoritmus)
 3. maska             AutoMasker (DensePose + SCHP) podľa typu

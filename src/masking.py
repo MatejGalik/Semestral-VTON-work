@@ -174,13 +174,11 @@ def _smooth(a: np.ndarray, n: int) -> np.ndarray:
     return np.convolve(np.pad(a, n // 2, mode="edge"), np.ones(n) / n, mode="valid")
 
 
-def analyze_pants(cloth: Image.Image) -> dict | None:
-    """Strih nohavíc z produktovej fotky – len spracovanie obrazu, žiadny model.
+def silhouette(cloth: Image.Image) -> np.ndarray | None:
+    """Silueta oblečenia na produktovej fotke (bool H×W) alebo None.
 
-    1. silueta: pixely, ktoré sa farbou líšia od pozadia (medián okraja fotky),
-    2. profil (_leg_profile): šírka jednej nohavice / šírka bokov
-       v FIT_SAMPLES bodoch od rozkroku (0) po lem (1).
-    Vráti {"profile", "knee", "hem", "label"} alebo None, ak nohavice nenájde.
+    Pixely, ktoré sa farbou líšia od pozadia (medián okraja fotky), otvorenie /
+    zatvorenie (OpenCV), najväčšia súvislá oblasť. Predpokladá jednoliate pozadie.
     """
     img = np.asarray(cloth.convert("RGB")).astype(np.int16)
     h, w, _ = img.shape
@@ -195,6 +193,20 @@ def analyze_pants(cloth: Image.Image) -> dict | None:
     fg = labels == 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
     if fg.sum() < 0.02 * h * w:
         return None                   # príliš malá silueta
+    return fg
+
+
+def analyze_pants(cloth: Image.Image) -> dict | None:
+    """Strih nohavíc z produktovej fotky – len spracovanie obrazu, žiadny model.
+
+    1. silueta: pixely, ktoré sa farbou líšia od pozadia (medián okraja fotky),
+    2. profil (_leg_profile): šírka jednej nohavice / šírka bokov
+       v FIT_SAMPLES bodoch od rozkroku (0) po lem (1).
+    Vráti {"profile", "knee", "hem", "label"} alebo None, ak nohavice nenájde.
+    """
+    fg = silhouette(cloth)
+    if fg is None:
+        return None
     leg = _leg_profile(fg)
     if leg is None:
         return None

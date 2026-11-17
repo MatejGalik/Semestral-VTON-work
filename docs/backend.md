@@ -12,8 +12,8 @@ UI (app.py, run_tryon)
 src/try_on.py: try_on()
    1. predspracovanie   – osoba: výrez 3:4 + zmena na 768×1024
                           oblečenie: doplnenie bielym okrajom na 768×1024
-   1b. typ oblečenia    – len pri cloth_type="auto": CLIP určí upper /
-                          lower / overall (CLOTH_TYPE_PROMPTS)
+   1b. typ oblečenia    – len pri cloth_type="auto": pravidlá nad siluetou
+                          (src/cloth_type.py, bez AI), keď nie sú isté, CLIP
    2. nové oblečenie    – CLIP z fotky oblečenia: rukáv (upper / overall),
                           dĺžka vrchu (upper), dĺžka šiat (overall);
                           strih nohavíc (lower) – vlastný algoritmus, bez modelu
@@ -38,7 +38,7 @@ SCHP, difúzny model). 🟢 = klasický algoritmus, 🔵 = natrénovaný AI mode
 | # | Krok | Typ | Dá sa bez AI? |
 |---|---|---|---|
 | 1 | Predspracovanie | 🟢 | už je |
-| 1b | Typ oblečenia pri `auto` (CLIP) | 🔵 | čiastočne (silueta: dve nohavice → `lower`) |
+| 1b | Typ oblečenia pri `auto` – pravidlá nad siluetou | 🟢 | už je (CLIP 🔵 len pri neistote) |
 | 2 | Rukáv a dĺžka nového oblečenia (CLIP) | 🔵 | áno, silueta oblečenia (len na čistom pozadí) |
 | 2b | Strih nohavíc (`analyze_pants`) | 🟢 | už je |
 | 3a | Póza / časti tela (DensePose) | 🔵 | nie |
@@ -138,6 +138,7 @@ try_on(person_img, cloth_img, cloth_type, **options) -> dict
 | `guidance_scale` | `float` (predvolene 2.5) | voliteľné, UI ho zatiaľ neposiela |
 | `sleeves` | `"auto"` \| `"short"` \| `"long"` \| `"sleeveless"` | voliteľné, ručné určenie rukávov namiesto CLIP (na testovanie); UI ho neposiela |
 | `length` | `"auto"` \| `"cropped"` \| `"regular"` \| `"long"` | voliteľné, ručné určenie dĺžky vrchu namiesto CLIP (na testovanie); UI ho neposiela |
+| `detect` | `"rules"` \| `"clip"` | voliteľné, pri `cloth_type="auto"`: `"clip"` preskočí pravidlá (porovnanie); UI ho neposiela |
 | `fit` | `"auto"` \| `"off"` | voliteľné, `"off"` vypne rozšírenie masky podľa strihu nohavíc (na porovnanie pred / po); UI ho posiela podľa prepínača „Respektovať strih“, API `/try_on` ho nemá (vždy `auto`) |
 
 Návrat: `result` (výsledok v pôvodnom rozmere fotky), `mask` (upravená maska
@@ -152,18 +153,44 @@ funguje ďalej (hodnota `"auto"` len pribudla, pôvodné tri ostávajú).
 
 _Stav: **implementované 2026-11-17, overené lokálne v DEMO režime, čaká na test na Kaggle.**_
 
-- CLIP zero-shot (ten istý model ako pri rukávoch) nad fotkou oblečenia
-  s bielym okrajom, 3 triedy `CLOTH_TYPE_PROMPTS`: vrch / spodok (nohavice,
-  šortky, sukňa) / šaty a overal. Vyberie sa najpravdepodobnejšia, bez prahu.
-- Ak CLIP nie je načítaný → `CLOTH_TYPE_FALLBACK` = `upper`.
-- Ďalej sa pokračuje presne ako pri ručne zvolenom type.
-- `info["cloth_type"]` = zistený typ, istota a zdroj (`clip` / `manual` /
-  `fallback`); UI ho ukáže v stavovom riadku („rozpoznané: Spodný diel“).
-- Ručný výber v UI ostáva na opravu, keď sa CLIP pomýli.
+Poradie: **pravidlá (bez AI) → CLIP → `upper`**.
 
-**Riziká / overiť na Kaggle.** Hraničné kusy (overal, dlhá tunika vs. krátke
-šaty, dlhý kabát), fotka modelky v celom outfite (CLIP nevie, ktorý kus sa
-skúša). Možné zlepšenie: ak `analyze_pants` nájde dve nohavice → `lower`.
+**1. Pravidlá nad siluetou** (`src/cloth_type.py`, ~10 ms, len OpenCV / numpy)
+
+- Silueta ako pri strihu nohavíc (`masking.silhouette`: farba ≠ pozadie,
+  najväčšia oblasť), orezaná na ohraničujúci obdĺžnik.
+- Znaky (relatívne, bez mierky): `aspect` výška / šírka, `legs` podiel riadkov
+  v spodných 25 % s presne dvoma úsekmi (dve nohavice; tri = rukávy pri tele),
+  `top_width` / `top_single` šírka a súvislosť horného okraja (pás vs.
+  výstrih / ramienka), `hem_width` šírka pri leme, `widest_at` kde je silueta
+  najširšia, `narrowest` najužšie miesto v hornej časti.
+- Rozhodovací strom (prahy `RULE_*`):
+  1. dve nohavice: hore súvislý pás → `lower` (nohavice, šortky), inak `overall` (overal),
+  2. dlhá (výška / šírka ≥ 1,45): rovný pás + rozširuje sa nadol → `lower`
+     (maxi sukňa), inak `overall` (šaty),
+  3. krátka, najširšia hore a lem užší → `upper` (rukávy / ramená),
+  4. krátka, rovný pás + rozširuje sa → `lower` (sukňa),
+  5. krátka, rovná → `upper`; inak **neisté** → CLIP.
+- Bez siluety (rušné pozadie, fotka bez okraja) → CLIP.
+
+**2. CLIP** (len keď pravidlá nerozhodnú, alebo `detect="clip"`): zero-shot,
+3 triedy `CLOTH_TYPE_PROMPTS`, najpravdepodobnejšia bez prahu. Bez CLIP →
+`CLOTH_TYPE_FALLBACK` = `upper`. DEMO režim používa len pravidlá.
+
+**Výstup:** `info["cloth_type"]` = typ, istota a zdroj (`rules` / `clip` /
+`manual` / `fallback`), `info["cloth_type_reason"]` = dôvod z pravidiel; UI
+ukáže typ v stavovom riadku („rozpoznané: Spodný diel“). Ručný výber ostáva.
+
+**Lokálne overenie (2026-11-17).** `python scripts/typ_oblecenia.py <fotky>`
+vypíše typ, dôvod a znaky. Ukážky z `assets/examples/` (3/3) a 12 umelých
+siluet (tričko, mikina, dlhý rukáv rozpažený aj pri tele, šortky, skinny,
+mini a maxi sukňa, šaty áčkové / puzdrové / tričkové, overal s ramienkami aj
+bez): správne 14 z 15. Chyba: dlhé úzke tielko → šaty.
+
+**Riziká / overiť na skutočných fotkách.** Prahy sú odladené na umelých
+siluetách. Tielko vs. šaty (bez mierky rozhoduje len pomer strán), dlhý kabát
+alebo tunika → šaty, fotka na modelke / figuríne alebo rušné pozadie (silueta
+nesedí → CLIP).
 
 ## Načítanie modelu
 

@@ -5,8 +5,9 @@ Kontrakt (používa ho app.py a API /try_on):
 
     person_img, cloth_img : PIL.Image
     cloth_type            : "upper" | "lower" | "overall" | "auto"
-                            ("auto" = typ určí CLIP z fotky oblečenia;
-                            zistený typ je v info["cloth_type"])
+                            ("auto" = typ sa určí z fotky oblečenia: najprv
+                            pravidlá nad siluetou (src/cloth_type.py, bez AI),
+                            keď nie sú isté, CLIP; zistený typ je v info["cloth_type"])
     options               : steps (int), seed (int), paste_face (bool),
                             guidance_scale (float, voliteľné),
                             sleeves ("auto" | "short" | "long" | "sleeveless",
@@ -14,6 +15,8 @@ Kontrakt (používa ho app.py a API /try_on):
                             length ("auto" | "cropped" | "regular" | "long" pre vrch,
                             "mini" | "knee" | "midi" | "maxi" pre šaty,
                             voliteľné – ručné určenie dĺžky namiesto CLIP),
+                            detect ("rules" | "clip", voliteľné – pri "auto":
+                            "clip" preskočí pravidlá; na porovnanie),
                             fit ("auto" | "off", voliteľné – "off" vypne
                             rozšírenie masky podľa strihu nohavíc; na porovnanie)
 
@@ -53,12 +56,12 @@ MASK_BLUR = 9                                 # rozmazanie okraja masky (ako v C
 
 # Úprava masky podľa nového oblečenia (CLIP zero-shot)
 CLIP_MODEL = "openai/clip-vit-base-patch32"
-CLOTH_TYPE_PROMPTS = {                        # cloth_type="auto" → typ oblečenia
+CLOTH_TYPE_PROMPTS = {                        # cloth_type="auto", keď pravidlá nie sú isté
     "upper": "a product photo of a top: t-shirt, shirt, blouse, sweater, hoodie or jacket",
     "lower": "a product photo of a bottom: pants, trousers, jeans, shorts or a skirt",
     "overall": "a product photo of a dress or a jumpsuit",
 }
-CLOTH_TYPE_FALLBACK = "upper"                 # ak CLIP nie je k dispozícii
+CLOTH_TYPE_FALLBACK = "upper"                 # ak nerozhodnú pravidlá ani CLIP
 SLEEVE_PROMPTS = {                            # trieda → popis pre CLIP (zero-shot)
     "short": "a product photo of a short-sleeved top, t-shirt or dress",
     "long": "a product photo of a long-sleeved top, shirt, sweater, jacket or dress",
@@ -111,6 +114,7 @@ from model.cloth_masker import AutoMasker  # noqa: E402  (z CatVTON)
 from model.pipeline import CatVTONPipeline  # noqa: E402  (z CatVTON)
 from utils import repaint_result, resize_and_crop, resize_and_padding  # noqa: E402  (z CatVTON)
 
+from . import cloth_type as cloth_rules  # noqa: E402
 from . import masking  # noqa: E402
 
 _DEVICE = "cuda"
@@ -226,10 +230,16 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
     person_r = resize_and_crop(person, (WIDTH, HEIGHT))
     cloth_r = resize_and_padding(cloth, (WIDTH, HEIGHT))
 
-    # 0) Typ oblečenia: ručne zvolený, alebo pri "auto" z fotky (CLIP)
-    t_conf, t_src = 1.0, "manual"
+    # 0) Typ oblečenia: ručne zvolený, alebo pri "auto" z fotky – najprv pravidlá
+    #    nad siluetou (bez AI, z pôvodnej fotky kvôli farbe pozadia), potom CLIP
+    t_conf, t_src, t_reason = 1.0, "manual", "-"
     if cloth_type == "auto":
-        detected, t_conf, t_src = _classify(cloth_r, CLOTH_TYPE_PROMPTS, "auto")
+        detected = None
+        if options.get("detect", "rules") != "clip":
+            detected, t_reason = cloth_rules.classify(cloth)
+            t_src = "rules"
+        if detected is None:
+            detected, t_conf, t_src = _classify(cloth_r, CLOTH_TYPE_PROMPTS, "auto")
         cloth_type = detected or CLOTH_TYPE_FALLBACK
         if detected is None:
             t_src = "fallback"
@@ -288,6 +298,7 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
     info = {
         "model": "CatVTON mix-48k-1024",
         "cloth_type": _fmt(cloth_type, t_conf, t_src),
+        "cloth_type_reason": t_reason,
         "steps": steps,
         "seed": seed,
         "guidance_scale": guidance,

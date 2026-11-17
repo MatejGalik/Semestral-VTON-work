@@ -142,11 +142,22 @@ python scripts/analyza_strihu.py nohavice.jpg
 Vypíše strih (úzke / rovné / široké) a profil šírky. Podrobnosti
 v [docs/backend.md](docs/backend.md#rozšírenie-masky-podľa-strihu-nohavíc-lower).
 
+### Lokálny test rozpoznania typu oblečenia
+
+Pravidlá nad siluetou (`src/cloth_type.py`) tiež nepotrebujú GPU ani model:
+
+```bash
+python scripts/typ_oblecenia.py tricko.jpg nohavice.png saty.jpg
+```
+
+Vypíše typ (upper / lower / overall alebo „neisté“), dôvod a znaky siluety.
+
 ## Použitie
 
 1. Nahraj fotku osoby (karta **Osoba**) a fotku oblečenia (karta **Produkt**),
    alebo klikni na príklad v sekcii **Príklady**.
-2. Typ oblečenia nechaj na **Automaticky** (rozpozná ho CLIP), alebo vyber
+2. Typ oblečenia nechaj na **Automaticky** (rozpozná ho zo siluety, pri
+   neistote CLIP), alebo vyber
    ručne: Vrchný diel / Spodný diel / Celé / šaty.
 3. Klikni **Vyskúšať**. Výsledok si stiahneš tlačidlom **Stiahnuť**.
 
@@ -204,7 +215,9 @@ ui/tabs.py            # build_tryon_tab(), build_about_tab(), budúce taby
 assets/examples/      # ukážkové osoby a produkty
 src/try_on.py         # backend: CatVTON (potrebuje GPU)
 src/masking.py        # úprava masky: dĺžka vrchu, šaty, ochrana rúk, strih nohavíc
+src/cloth_type.py     # typ oblečenia pravidlami nad siluetou (bez AI)
 scripts/analyza_strihu.py  # lokálny test analýzy strihu nohavíc (bez GPU)
+scripts/typ_oblecenia.py   # lokálny test rozpoznania typu oblečenia (bez GPU)
 requirements.txt      # závislosti UI (stačia lokálne)
 requirements-gpu.txt  # závislosti backendu (Kaggle)
 kaggle/run.ipynb      # spúšťač na Kaggle
