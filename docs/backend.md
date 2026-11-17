@@ -160,7 +160,9 @@ Poradie: **pravidlá (bez AI) → CLIP → `upper`**.
 - Silueta ako pri strihu nohavíc (`masking.silhouette`: farba ≠ pozadie,
   najväčšia oblasť), orezaná na ohraničujúci obdĺžnik.
 - Znaky (relatívne, bez mierky): `aspect` výška / šírka, `legs` podiel riadkov
-  v spodných 25 % s presne dvoma úsekmi (dve nohavice; tri = rukávy pri tele),
+  od 35 % výšky po lem, kde je „pár nohavíc“ – presne dva úseky, podobne široké
+  (≥ 60 %), medzera pri strede siluety (baggy sa pri leme dotýkajú; tri úseky
+  alebo nesymetrický pár = rukávy),
   `top_width` / `top_single` šírka a súvislosť horného okraja (pás vs.
   výstrih / ramienka), `hem_width` šírka pri leme, `widest_at` kde je silueta
   najširšia, `narrowest` najužšie miesto v hornej časti.
@@ -170,7 +172,8 @@ Poradie: **pravidlá (bez AI) → CLIP → `upper`**.
      (maxi sukňa), inak `overall` (šaty),
   3. krátka, najširšia hore a lem užší → `upper` (rukávy / ramená),
   4. krátka, rovný pás + rozširuje sa → `lower` (sukňa),
-  5. krátka, rovná → `upper`; inak **neisté** → CLIP.
+  5. krátka, rovná a hore **bez** širokého pásu (< 70 %) → `upper`; inak
+     **neisté** → CLIP.
 - Bez siluety (rušné pozadie, fotka bez okraja) → CLIP.
 
 **2. CLIP** (len keď pravidlá nerozhodnú, alebo `detect="clip"`): zero-shot,
@@ -186,6 +189,14 @@ vypíše typ, dôvod a znaky. Ukážky z `assets/examples/` (3/3) a 12 umelých
 siluet (tričko, mikina, dlhý rukáv rozpažený aj pri tele, šortky, skinny,
 mini a maxi sukňa, šaty áčkové / puzdrové / tričkové, overal s ramienkami aj
 bez): správne 14 z 15. Chyba: dlhé úzke tielko → šaty.
+
+**Oprava po teste na Kaggle (2026-11-17).** Baggy nohavice →
+`upper (1.00, rules)`, dôvod „krátka, rovná silueta (vrch)“. Široké nohavice
+majú nízky pomer strán a pri leme sa dotýkajú, takže test „dve nohavice“
+v spodných 25 % zlyhal a padli do pravidla 5. Oprava: pár nohavíc sa hľadá od
+35 % výšky, pravidlo 5 vyžaduje hore úzky okraj (široký pás → neisté → CLIP).
+Umelé baggy siluety (dotýkajúce sa aj rozkročené) → `lower`; ostatné bez
+zmeny, sveter s rukávmi pri tele → neisté (CLIP). Overiť znova na Kaggle.
 
 **Riziká / overiť na skutočných fotkách.** Prahy sú odladené na umelých
 siluetách. Tielko vs. šaty (bez mierky rozhoduje len pomer strán), dlhý kabát

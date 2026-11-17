@@ -19,14 +19,17 @@ from PIL import Image
 
 from .masking import _runs, silhouette
 
-RULE_LEGS_ZONE = 0.25        # spodných 25 % siluety: hľadajú sa dve nohavice
-RULE_LEGS_SHARE = 0.6        # … aspoň v 60 % riadkov presne dva úseky (3 = rukávy pri tele)
+RULE_LEGS_FROM = 0.35        # dve nohavice sa hľadajú od 35 % výšky po lem (baggy sa pri leme dotýkajú)
+RULE_LEGS_SHARE = 0.3        # … aspoň v 30 % týchto riadkov „pár nohavíc“ (3 úseky = rukávy pri tele)
+RULE_LEGS_SIMILAR = 0.6      # pár: užší úsek ≥ 60 % širšieho
+RULE_LEGS_CENTER = 0.15      # … a medzera najviac 15 % šírky od stredu siluety
 RULE_MIN_RUN = 0.05          # úsek užší ako 5 % šírky siluety sa ignoruje (strapce, šnúrky)
 RULE_LONG = 1.45             # výška / šírka ≥ 1,45 → dlhý kus (šaty, maxi sukňa)
 RULE_SLEEVES_ZONE = 0.5      # najširšie miesto v hornej polovici → rukávy / ramená
 RULE_SLEEVES_HEM = 0.85      # … a lem užší ako 85 % max. šírky
 RULE_WAISTBAND = 0.42        # horný okraj ako súvislý pás ≥ 42 % max. šírky → sukňa / nohavice
 RULE_PANTS_TOP = 0.6         # nohavice: hore súvislý pás ≥ 60 % (inak výstrih / ramená → overal)
+RULE_WIDE_TOP = 0.7          # krátka rovná silueta s pásom ≥ 70 % hore = asi spodok → neisté
 RULE_FLARE = 1.25            # lem ≥ 1,25 × najužšie miesto → rozširuje sa nadol
 
 
@@ -42,12 +45,20 @@ def features(fg: np.ndarray) -> dict:
     def band(a: float, b: float) -> slice:
         return slice(int(a * h), max(int(a * h) + 1, int(b * h)))
 
-    legs_rows = runs[band(1 - RULE_LEGS_ZONE, 1.0)]
+    def leg_pair(r: list[tuple[int, int]]) -> bool:
+        if len(r) != 2:
+            return False
+        (a, la), (b, lb) = sorted(r)
+        gap_center = (a + la + b) / 2
+        return (min(la, lb) >= RULE_LEGS_SIMILAR * max(la, lb)
+                and abs(gap_center - w / 2) <= RULE_LEGS_CENTER * w)
+
+    legs_rows = runs[band(RULE_LEGS_FROM, 1.0)]
     top = band(0.02, 0.08)                             # tesne pod horným okrajom
     top_runs = [len(r) for r in runs[top]]
     return {
         "aspect": h / w,
-        "legs": float(np.mean([len(r) == 2 for r in legs_rows])),
+        "legs": float(np.mean([leg_pair(r) for r in legs_rows])),
         "top_width": float(np.median(widths[top])),
         "top_single": float(np.mean([n == 1 for n in top_runs])) >= 0.5,
         "hem_width": float(np.median(widths[band(0.9, 0.98)])),
@@ -73,9 +84,9 @@ def decide(f: dict) -> tuple[str | None, str]:
         return "upper", "najširšia hore (rukávy / ramená), krátka"
     if waistband and flare:
         return "lower", "hore rovný pás, nadol sa rozširuje (sukňa)"
-    if not flare:
-        return "upper", "krátka, rovná silueta (vrch)"
-    return None, "krátka, rozširuje sa nadol, bez pásu – neisté"
+    if not flare and not (f["top_single"] and f["top_width"] >= RULE_WIDE_TOP):
+        return "upper", "krátka, rovná silueta, hore bez širokého pásu (vrch)"
+    return None, "krátka, bez jasných znakov (široký pás alebo rozšírenie bez pásu) – neisté"
 
 
 def classify(cloth: Image.Image) -> tuple[str | None, str]:
