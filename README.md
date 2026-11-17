@@ -151,7 +151,8 @@ v [docs/backend.md](docs/backend.md#rozšírenie-masky-podľa-strihu-nohavíc-lo
 3. Klikni **Vyskúšať**. Výsledok si stiahneš tlačidlom **Stiahnuť**.
 
 V sekcii **Pokročilé nastavenia** sú počet krokov (20–50), seed (−1 = náhodný),
-vloženie pôvodnej tváre a zobrazenie masky.
+vloženie pôvodnej tváre, zobrazenie masky a **Respektovať strih** (vypni na
+porovnanie bez rozšírenia masky podľa strihu nohavíc; cez API je vždy zapnuté).
 
 ## API
 

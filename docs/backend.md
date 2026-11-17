@@ -138,7 +138,7 @@ try_on(person_img, cloth_img, cloth_type, **options) -> dict
 | `guidance_scale` | `float` (predvolene 2.5) | voliteľné, UI ho zatiaľ neposiela |
 | `sleeves` | `"auto"` \| `"short"` \| `"long"` \| `"sleeveless"` | voliteľné, ručné určenie rukávov namiesto CLIP (na testovanie); UI ho neposiela |
 | `length` | `"auto"` \| `"cropped"` \| `"regular"` \| `"long"` | voliteľné, ručné určenie dĺžky vrchu namiesto CLIP (na testovanie); UI ho neposiela |
-| `fit` | `"auto"` \| `"off"` | voliteľné, `"off"` vypne rozšírenie masky podľa strihu nohavíc (na porovnanie pred / po); UI ho neposiela |
+| `fit` | `"auto"` \| `"off"` | voliteľné, `"off"` vypne rozšírenie masky podľa strihu nohavíc (na porovnanie pred / po); UI ho posiela podľa prepínača „Respektovať strih“, API `/try_on` ho nemá (vždy `auto`) |
 
 Návrat: `result` (výsledok v pôvodnom rozmere fotky), `mask` (upravená maska
 v pôvodnom rozmere), `info` (model, typ oblečenia – napr. `"lower (0.93, clip)"`, kroky, seed, rozlíšenie, GPU, čas, rukávy, dĺžka,
@@ -523,7 +523,8 @@ sa prešlo na rozdiel voči pôvodným nohaviciam._
 
 **Výstup v `info`:** `"fit": "široké (koleno 0.55, lem 0.55)"`,
 `"mask_changes": "nohavice rozšírené (+22%)"`. Voľba `fit="off"` rozšírenie
-vypne (porovnanie pred / po s rovnakým seedom).
+vypne (porovnanie pred / po s rovnakým seedom) – v UI prepínač **Respektovať
+strih** v Pokročilých nastaveniach.
 
 **Lokálne overenie (2026-11-13, bez GPU).**
 

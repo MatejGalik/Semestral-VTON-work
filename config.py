@@ -36,6 +36,7 @@ STEPS_MIN, STEPS_MAX, STEPS_DEFAULT = 20, 50, 30
 SEED_DEFAULT = 42  # -1 = náhodný seed
 PASTE_FACE_DEFAULT = True
 SHOW_MASK_DEFAULT = False
+RESPECT_FIT_DEFAULT = True  # rozšírenie masky podľa strihu (len UI, API vždy zapnuté)
 
 EXPECTED_SECONDS = 15  # orientačný čas generovania na GPU
 
@@ -95,6 +96,8 @@ TEXTS = {
     "seed_info": "Rovnaký seed = rovnaký výsledok. −1 = náhodný.",
     "paste_face": "Vložiť pôvodnú tvár",
     "show_mask": "Zobraziť masku",
+    "respect_fit": "Respektovať strih",
+    "respect_fit_info": "Široké nohavice rozšíria masku. Vypni na porovnanie.",
     "examples": "Príklady",
     "examples_hint": "Klikni na príklad – predvyplní osobu aj produkt.",
     # Chyby (gr.Warning)

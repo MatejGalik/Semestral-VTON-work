@@ -79,7 +79,8 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
   predvolene Automaticky – typ určí CLIP a stavový riadok ho vypíše),
   tlačidlo Vyskúšať, stiahnutie výsledku (PNG).
 - **Pokročilé nastavenia:** počet krokov (20–50, predvolene 30), seed
-  (−1 = náhodný), vložiť pôvodnú tvár, zobraziť masku.
+  (−1 = náhodný), vložiť pôvodnú tvár, zobraziť masku, respektovať strih
+  (predvolene zapnuté; vypnuté → `fit="off"`, maska bez rozšírenia podľa strihu).
 - **Príklady:** obrázky z `assets/examples/`.
 - **Tab O projekte:** popis pipeline, autori, technológie (texty v `config.ABOUT`).
 - **Budúce taby:** zapínajú sa flagom v `config.FEATURES` (`compare_masks`,
@@ -97,6 +98,10 @@ meniť** – používa ho rozšírenie do prehliadača.
 - Vstupy: `person_img`, `cloth_img`, `cloth_type` (`upper`/`lower`/`overall`/`auto`),
   `steps`, `seed`, `paste_face`, `show_mask`
 - Výstupy: `result`, `mask`, `download` (PNG), `status` (text)
+- Endpoint visí na skrytom tlačidle (`ui/tabs.py`), tlačidlo Vyskúšať má
+  vlastnú súkromnú udalosť s prepínačom „Respektovať strih“ navyše. API preto
+  prepínač nemá – strih je pri volaní cez API vždy zapnutý. Obe udalosti
+  zdieľajú frontu (`concurrency_id="try_on"`, po jednom).
 
 Príklad volania cez `gradio_client` je v [README](../README.md#api).
 

@@ -17,6 +17,7 @@ from config import (
     EXAMPLES_DIR,
     FEATURES,
     PASTE_FACE_DEFAULT,
+    RESPECT_FIT_DEFAULT,
     SEED_DEFAULT,
     SHOW_MASK_DEFAULT,
     STEPS_DEFAULT,
@@ -166,6 +167,8 @@ def build_tryon_tab(run_fn: Callable) -> None:
             with gr.Row():
                 paste_face = gr.Checkbox(value=PASTE_FACE_DEFAULT, label=T["paste_face"])
                 show_mask = gr.Checkbox(value=SHOW_MASK_DEFAULT, label=T["show_mask"])
+                respect_fit = gr.Checkbox(value=RESPECT_FIT_DEFAULT, label=T["respect_fit"],
+                                          info=T["respect_fit_info"])
 
         # --- Príklady ----------------------------------------------------- #
         examples = [
@@ -195,14 +198,20 @@ def build_tryon_tab(run_fn: Callable) -> None:
         api_inputs = [person, cloth, cloth_type, steps, seed, paste_face, show_mask]
         api_outputs = [result, mask, download, status]
 
+        # Tlačidlo v UI posiela navyše prepínač `respect_fit` (súkromná udalosť).
         (
             submit.click(_start, None, [submit, status], queue=False,
                          api_visibility="private")
-            .then(run_fn, api_inputs, api_outputs, api_name="try_on",
-                  api_visibility="public", concurrency_limit=1,
+            .then(run_fn, api_inputs + [respect_fit], api_outputs,
+                  api_visibility="private", concurrency_limit=1, concurrency_id="try_on",
                   show_progress="full", show_progress_on=[result])
             .then(_finish, None, submit, queue=False, api_visibility="private")
         )
+        # Verejný endpoint /try_on – skryté tlačidlo, vstupy bez zmeny (strih vždy zapnutý).
+        api_trigger = gr.Button(visible=False)
+        api_trigger.click(run_fn, api_inputs, api_outputs, api_name="try_on",
+                          api_visibility="public", concurrency_limit=1,
+                          concurrency_id="try_on")
 
         show_mask.change(
             lambda show, m: gr.update(visible=bool(show and m is not None)),
