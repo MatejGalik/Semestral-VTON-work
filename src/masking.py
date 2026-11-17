@@ -5,9 +5,10 @@ Postup (adjust_mask):
 1b. šaty        – `overall`: maska skončí pri leme podľa dĺžky šiat a zúži sa
                   na telo (bez „kabátovej“ siluety AutoMaskera)
 2. ochrana      – vyreže dlane, pri krátkom rukáve / bez rukávov aj holé ruky
-3. nohavice     – `lower`: ak sú nové nohavice (analyze_pants) širšie ako
-                  pôvodné na osobe, maska sa smerom von rozšíri o rozdiel;
-                  maska AutoMaskera sa nikdy nezužuje
+3. nohavice     – `lower`: podľa voľnosti nových nohavíc (analyze_pants)
+                  sa určí cieľová šírka na osobe (noha z DensePose → šírka
+                  z fotky); o rozdiel voči pôvodným nohaviciam sa maska
+                  rozšíri von; maska AutoMaskera sa nikdy nezužuje
 
 Modul neimportuje kód CatVTON – mapy tried mu odovzdáva src/try_on.py.
 Masky sú PIL "L" 768×1024 (0 / 255), ešte bez rozmazania okraja.
@@ -56,7 +57,13 @@ FIT_SAMPLES = 20                      # počet bodov profilu šírky (rozkrok �
 FIT_MAX_EXTRA = 0.4                   # strop: okraj sa posunie max. o 40 % šírky bokov na stranu
 FIT_MAX_PROFILE = 0.9                 # nohavica širšia ako 90 % bokov → nevierohodné
 FIT_MAX_JUMP = 0.2                    # skok šírky medzi susednými bodmi profilu → nevierohodné
-FIT_MIN_GAIN = 0.03                   # pod +3 % plochy masky sa maska nemení
+FIT_MIN_GAIN = 0.01                   # pod +1 % plochy masky sa maska nemení
+FIT_MAX_CROTCH = 0.45                 # produkt: rozdelenie nižšie ako 45 % výšky = nohavice sa
+                                      # prekrývajú → rozkrok = FIT_DEFAULT_CROTCH
+FIT_TIGHT = (0.47, 0.31)              # profil priliehavých nohavíc na fotke (rozkrok, lem)
+FIT_LOOSE_RANGE = 0.12                # o toľko širšie ako priliehavé = úplne voľné
+FIT_LOOSE_SCALE = 1.15                # voľná nohavica na osobe ≈ 1,15 × pomer z fotky × boky
+FIT_OUTER_SHARE = 0.75                # podiel rozšírenia, ktorý ide von (dnu je maska už medzi nohami)
 FIT_LABELS = ((0.36, "úzke"), (0.46, "rovné"), (9.0, "široké"))  # podľa šírky lemu / bokov
 
 
@@ -133,7 +140,7 @@ def _runs(row: np.ndarray) -> list[tuple[int, int]]:
     return list(zip(starts, ends - starts))
 
 
-def _leg_profile(fg: np.ndarray) -> dict | None:
+def _leg_profile(fg: np.ndarray, max_crotch: float | None = None) -> dict | None:
     """Profil nohavíc zo siluety (fotka nohavíc aj nohavice na osobe zo SCHP).
 
     rozkrok = prvý riadok, kde sa silueta rozdelí na dve nohavice,
@@ -150,6 +157,8 @@ def _leg_profile(fg: np.ndarray) -> dict | None:
     split = [y for y in range(top + int(0.15 * height), bottom + 1)
              if len([r for r in _runs(fg[y]) if r[1] >= min_run]) >= 2]
     crotch = split[0] if split else top + int(FIT_DEFAULT_CROTCH * height)
+    if max_crotch is not None and crotch - top > max_crotch * height:
+        crotch = top + int(FIT_DEFAULT_CROTCH * height)   # nohavice sa prekrývajú (baggy)
     if bottom - crotch < 0.3 * height:
         return None                   # príliš krátke (sukňa, šortky)
     hip = float(max(sum(r[1] for r in _runs(fg[y])) for y in range(top + int(FIT_WAIST_ROWS * height), crotch)))
@@ -231,7 +240,7 @@ def analyze_pants(cloth: Image.Image) -> dict | None:
     fg = silhouette(cloth)
     if fg is None:
         return None
-    leg = _leg_profile(fg)
+    leg = _leg_profile(fg, max_crotch=FIT_MAX_CROTCH)
     if leg is None:
         return None
 
@@ -245,6 +254,9 @@ def analyze_pants(cloth: Image.Image) -> dict | None:
     if ok.sum() < FIT_SAMPLES // 2:
         return None
     profile = np.interp(grid, grid[ok], profile[ok])
+    # Spodných 15 %: zaoblený / pokrčený lem šírku umelo znižuje → nepoklesne pod hodnotu nad ním
+    tail = int(0.85 * FIT_SAMPLES)
+    profile[tail:] = np.maximum(profile[tail:], profile[tail - 1])
     # Kontrola vierohodnosti: nohavica širšia ako boky alebo skoky v šírke →
     # nie je to produktová fotka nohavíc (napr. osoba, zložené nohavice)
     if profile.max() > FIT_MAX_PROFILE or np.abs(np.diff(profile)).max() > FIT_MAX_JUMP:
@@ -260,23 +272,39 @@ def describe_fit(fit: dict | None) -> str:
     return f'{fit["label"]} (koleno {fit["knee"]:.2f}, lem {fit["hem"]:.2f})' if fit else "-"
 
 
-def _widen_legs(m: np.ndarray, old: np.ndarray, keep: np.ndarray, fit: dict) -> float:
-    """Rozšíri masku nohavíc o rozdiel strihu nových a pôvodných nohavíc.
+def _interp_s(prof: dict, rows: np.ndarray, crotch: int, bottom: int) -> np.ndarray:
+    """Pomer šírky z profilu `prof` (_leg_profile) v riadkoch `rows` iného profilu – podľa
+    relatívnej polohy medzi rozkrokom (0) a lemom (1)."""
+    s_src = (prof["rows"] - prof["crotch"]) / max(1, prof["bottom"] - prof["crotch"])
+    s_dst = (rows - crotch) / max(1, bottom - crotch)
+    return np.interp(s_dst, s_src, _fill_nan(prof["ratio"]))
 
-    `old` = pôvodné nohavice na osobe (SCHP), prípadne nohy z DensePose.
-    Ten istý profil (_leg_profile) sa zmeria aj na nich; v každom riadku od
-    rozkroku po lem sa vonkajší okraj nohavíc posunie von o
-    (nový pomer − pôvodný pomer) × šírka bokov. Pridá sa len to, čo nie je
-    v `keep` (ruky, vrch, topánky…); nič sa neuberá. Vráti prírastok plochy.
+
+def _widen_legs(m: np.ndarray, old: np.ndarray, legs: np.ndarray, keep: np.ndarray, fit: dict) -> float:
+    """Rozšíri masku nohavíc podľa strihu nových nohavíc.
+
+    `old` = pôvodné nohavice na osobe (SCHP), `legs` = nohy z DensePose. Pre
+    každý riadok od rozkroku po lem (pomery k šírke bokov osoby):
+      voľnosť  = (nový pomer z fotky − priliehavé nohavice FIT_TIGHT) / FIT_LOOSE_RANGE, 0…1
+      cieľ     = noha + voľnosť × (FIT_LOOSE_SCALE × nový pomer − noha)
+      rozdiel  = cieľ − pôvodné nohavice; vonkajší okraj sa posunie o FIT_OUTER_SHARE × rozdiel.
+    Priliehavé nohavice → cieľ = noha → nič; baggy → cieľ ~ šírka z fotky.
+    Pridá sa len to, čo nie je v `keep`; nič sa neuberá. Vráti prírastok plochy.
     """
     leg = _leg_profile(old)
     if leg is None:
         return 0.0
     w = m.shape[1]
-    rows, hip = leg["rows"], leg["hip"]
-    s = (rows - leg["crotch"]) / max(1, leg["bottom"] - leg["crotch"])
-    new_ratio = np.interp(s, np.linspace(0, 1, len(fit["profile"])), fit["profile"])
-    extra = np.clip(new_ratio - _fill_nan(leg["ratio"]), 0, FIT_MAX_EXTRA) * hip
+    rows, hip, crotch, bottom = leg["rows"], leg["hip"], leg["crotch"], leg["bottom"]
+    s = (rows - crotch) / max(1, bottom - crotch)
+    new = np.interp(s, np.linspace(0, 1, len(fit["profile"])), fit["profile"])
+    tight = FIT_TIGHT[0] + (FIT_TIGHT[1] - FIT_TIGHT[0]) * s
+    loose = np.clip((new - tight) / FIT_LOOSE_RANGE, 0, 1)
+    old_ratio = _fill_nan(leg["ratio"])
+    body = _leg_profile(legs) if legs.any() else None
+    leg_ratio = np.minimum(_interp_s(body, rows, crotch, bottom) * body["hip"] / hip, old_ratio)         if body is not None else old_ratio
+    target = leg_ratio + loose * np.maximum(FIT_LOOSE_SCALE * new - leg_ratio, 0)
+    extra = np.clip((target - old_ratio) * FIT_OUTER_SHARE, 0, FIT_MAX_EXTRA) * hip
     k = max(15, int(0.08 * len(rows)) | 1)       # vyhladenie okraja (~8 % dĺžky nohy)
     extra = _smooth(extra, k)
     left, right = _smooth(_fill_nan(leg["left"]), k), _smooth(_fill_nan(leg["right"]), k)
@@ -287,10 +315,10 @@ def _widen_legs(m: np.ndarray, old: np.ndarray, keep: np.ndarray, fit: dict) -> 
             added[y, max(0, int(l - e)): min(w, int(r + e) + 1)] = True
 
     before = m.sum()
-    new = m | (added & ~keep)
-    gain = float(new.sum() - before) / max(1, before)
+    grown = m | (added & ~keep)
+    gain = float(grown.sum() - before) / max(1, before)
     if gain >= FIT_MIN_GAIN:
-        m |= new
+        m |= grown
         return gain
     return 0.0
 
@@ -325,10 +353,11 @@ def adjust_mask(
                            _kernel(size, 250), iterations=PROTECT_DILATE) > 0
         keep = hands | np.isin(lip, SCHP_LIP_KEEP) | np.isin(atr, SCHP_ATR_KEEP)
         # Pôvodné nohavice na osobe (SCHP); ak ich niet (šaty, šortky…), nohy z DensePose
+        legs = np.isin(densepose, DENSEPOSE_LEGS[0] + DENSEPOSE_LEGS[1])
         old = np.isin(lip, SCHP_LIP_PANTS) | np.isin(atr, SCHP_ATR_PANTS)
         if old.sum() < 0.01 * old.size:
-            old = np.isin(densepose, DENSEPOSE_LEGS[0] + DENSEPOSE_LEGS[1])
-        gain = _widen_legs(m, old, keep, pants_fit)
+            old = legs
+        gain = _widen_legs(m, old, legs, keep, pants_fit)
         if not gain:
             return mask, [], changes
         changes.append(f"nohavice rozšírené (+{gain:.0%})")

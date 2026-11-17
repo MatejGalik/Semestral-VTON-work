@@ -63,35 +63,6 @@
   cursor: help;
 }
 
-/* ---------- Taby ---------- */
-.vton-tabs > .tab-wrapper,
-.vton-tabs .tab-container {
-  border-bottom: 1px solid var(--vton-border) !important;
-}
-
-.vton-tabs button[role="tab"] {
-  font-size: 14px;
-  color: var(--vton-muted);
-  letter-spacing: .02em;
-}
-
-.vton-tabs button[role="tab"][aria-selected="true"],
-.vton-tabs button[role="tab"].selected {
-  color: var(--vton-text) !important;
-}
-
-.vton-tabs button[role="tab"][aria-selected="true"]::after,
-.vton-tabs button[role="tab"].selected::after {
-  background: var(--vton-accent) !important;
-  height: 2px !important;
-}
-
-.vton-tabs .tabitem {
-  padding: 24px 0 0 !important;
-  border: none !important;
-  background: transparent !important;
-}
-
 /* ---------- Karty ---------- */
 .vton-cards {
   gap: 0 !important;
@@ -289,71 +260,6 @@
   cursor: progress;
 }
 
-/* ---------- Akordeóny ---------- */
-.vton-accordion {
-  background: var(--vton-card) !important;
-  border: 1px solid var(--vton-border) !important;
-  border-radius: var(--vton-radius) !important;
-  box-shadow: var(--vton-shadow) !important;
-}
-
-.vton-accordion > button,
-.vton-accordion .label-wrap {
-  font-size: 14px !important;
-  font-weight: 500;
-  color: var(--vton-text) !important;
-}
-
-.vton-hint,
-.vton-hint p {
-  color: var(--vton-muted) !important;
-  font-size: 13px !important;
-}
-
-/* ---------- O projekte ---------- */
-.vton-about {
-  max-width: 720px;
-  background: var(--vton-card);
-  border: 1px solid var(--vton-border);
-  border-radius: var(--vton-radius);
-  box-shadow: var(--vton-shadow);
-  padding: 32px;
-  line-height: 1.65;
-  color: var(--vton-text);
-}
-
-.vton-about h2,
-.vton-about h3 {
-  font-family: var(--font-heading);
-  font-weight: 500;
-  color: var(--vton-text);
-}
-
-.vton-about h2 {
-  font-size: 32px;
-  margin: 0 0 12px;
-}
-
-.vton-about h3 {
-  font-size: 22px;
-  margin: 24px 0 6px;
-}
-
-.vton-about p,
-.vton-about li {
-  color: var(--vton-text);
-  font-size: 15px;
-}
-
-.vton-about ol {
-  padding-left: 20px;
-  margin: 0;
-}
-
-.vton-about li::marker {
-  color: var(--vton-accent);
-}
-
 /* ---------- Mobil ---------- */
 @media (max-width: 900px) {
   .vton-cards {
@@ -389,15 +295,10 @@
     padding: 8px 12px !important;
     font-size: 13px;
   }
-
-  .vton-about {
-    padding: 20px;
-  }
 }
 
 /* Gradio obalí formulárové prvky do .form so šedým pozadím – tu ho netreba */
-.vton-controls .form,
-.vton-accordion .form {
+.vton-controls .form {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
@@ -406,4 +307,22 @@
 
 .vton-controls .vton-segmented {
   padding: 0 !important;
+}
+
+/* Prepínače pod tlačidlom (zobraziť masku, respektovať strih) */
+.vton-switches {
+  justify-content: center !important;
+  flex-wrap: wrap;
+}
+
+.vton-switches > * {
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+}
+
+.vton-switches .block {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 4px 8px !important;
 }

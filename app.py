@@ -27,7 +27,7 @@ import gradio as gr
 from PIL import Image, ImageDraw, ImageFont
 
 from config import CLOTH_TYPES, TEXTS as T
-from ui.tabs import build_about_tab, build_future_tabs, build_header, build_tryon_tab
+from ui.tabs import build_header, build_tryon
 from ui.theme import FORCE_LIGHT_JS, build_theme, page_head
 
 log = logging.getLogger("vton")
@@ -178,10 +178,7 @@ def build_app(demo_mode: bool) -> gr.Blocks:
     with gr.Blocks(title=T["page_title"], fill_width=False) as app:
         with gr.Column(elem_classes="vton-page"):
             build_header(demo_mode)
-            with gr.Tabs(elem_classes="vton-tabs"):
-                build_tryon_tab(run_tryon)
-                build_future_tabs()
-                build_about_tab()
+            build_tryon(run_tryon)
     return app
 
 

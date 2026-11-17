@@ -530,7 +530,7 @@ pri dlani neostala manžeta pôvodného rukáva.
 
 ## Rozšírenie masky podľa strihu nohavíc (`lower`)
 
-_Stav: **implementované 2026-11-13, 2. verzia (rozdiel voči pôvodným nohaviciam) otestovaná lokálne, čaká na test na Kaggle.**_
+_Stav: **implementované 2026-11-13, 3. verzia (cieľ podľa voľnosti strihu, 2026-11-17) otestovaná lokálne, čaká na test na Kaggle.**_
 
 **Problém.** Pozri Zistenia „Široké (baggy) nohavice vyšli úzke“ – maska
 AutoMaskera kopíruje pôvodné nohavice, model nemá priestor na širší strih.
@@ -546,7 +546,8 @@ fotka nohavíc
  → silueta: pixely, ktoré sa farbou líšia od pozadia (medián okraja fotky)
             + otvorenie / zatvorenie (OpenCV), najväčšia súvislá oblasť
  → rozkrok: prvý riadok, kde sa silueta rozdelí na dve nohavice
-            (ak sa nerozdelí, 35 % výšky – FIT_DEFAULT_CROTCH)
+            (ak sa nerozdelí alebo až pod 45 % výšky – nohavice sa
+            prekrývajú, baggy – 35 % výšky, FIT_DEFAULT_CROTCH)
  → šírka bokov: najširší riadok medzi pásom a rozkrokom
             (pás sa vynechá – býva stiahnutý gumou)
  → profil: šírka jednej nohavice / šírka bokov v 20 bodoch od rozkroku po lem
@@ -559,21 +560,35 @@ fotka nohavíc
   produktová fotka nohavíc (napr. osoba, zložené nohavice) → bez zmeny masky.
   Rovnako, ak sa silueta nenájde alebo sú nohavice príliš krátke (šortky).
 
-**2. Rozšírenie masky** (`masking._widen_legs`) – o **rozdiel** strihu nových
-a pôvodných nohavíc
+- Spodných 15 % profilu nepoklesne pod hodnotu nad nimi (zaoblený /
+  pokrčený lem by šírku umelo znižoval); kontrola skokov až potom.
 
-- Pôvodné nohavice na osobe = SCHP (LIP nohavice / sukňa, ATR nohavice /
-  sukňa); ak ich niet (šaty, šortky), nohy z DensePose.
-- Na nich sa zmeria ten istý profil (`_leg_profile`: rozkrok, šírka bokov,
-  šírka nohavice / boky v každom riadku) a vonkajšie okraje nohavíc.
-- V každom riadku od rozkroku po lem sa ľavý okraj posunie doľava a pravý
-  doprava o (nový pomer − pôvodný pomer) × šírka bokov osoby; záporný rozdiel
-  = 0. Strop 40 % bokov na stranu (`FIT_MAX_EXTRA`), okraj sa vyhladí
-  (~8 % dĺžky nohy).
+**2. Rozšírenie masky** (`masking._widen_legs`) – **cieľová šírka podľa
+voľnosti strihu**
+
+- Na osobe: pôvodné nohavice = SCHP (LIP / ATR nohavice, sukňa; ak ich niet,
+  nohy z DensePose), nohy = DensePose. Na oboch profil `_leg_profile`.
+- V každom riadku od rozkroku po lem (pomery k šírke bokov osoby):
+  - **voľnosť** = (nový pomer − priliehavé nohavice) / 0,12, orezané 0…1;
+    priliehavé = profil skinny na fotke, lineárne 0,47 → 0,31 (`FIT_TIGHT`),
+  - **cieľ** = noha + voľnosť × (1,15 × nový pomer − noha)
+    (`FIT_LOOSE_SCALE`: voľná látka visí, na osobe je ~ako na fotke),
+  - **rozdiel** = cieľ − pôvodné nohavice; vonkajší okraj sa posunie von
+    o 75 % rozdielu (`FIT_OUTER_SHARE`; dnu je maska už medzi nohami).
+- Skinny → cieľ = noha → nič. Baggy na osobe v úzkych riflách → široko.
+  Baggy na osobe v baggy → pôvodné sú už široké → málo / nič.
+- Strop 40 % bokov na stranu (`FIT_MAX_EXTRA`), okraj sa vyhladí (~8 % dĺžky nohy).
 - Pridá sa len to, čo nie je chránené: dlane a chodidlá (DensePose,
   roztiahnuté), vlasy, vrch, kabát, tvár, ruky, topánky (SCHP LIP aj ATR).
-- Ak prírastok plochy < 3 % (`FIT_MIN_GAIN`), maska sa nemení. Nové
-  nohavice rovnako úzke alebo užšie ako pôvodné → rozdiel 0 → bez zmeny.
+- Ak prírastok plochy < 1 % (`FIT_MIN_GAIN`), maska sa nemení.
+
+_2. verzia (2026-11-13) posúvala okraj o (nový pomer − pôvodný pomer) × boky.
+Na Kaggle (2026-11-17) zelené menčestrové baggy na chalanovi v skinny riflách
+vyšli ako skinny: rozkrok na fotke sa našiel až pri 68 % výšky (nohavice sa
+prekrývajú), pokrčený lem znížil profil (0,28 pri leme) → „rovné“, rozdiel
+voči riflám pod 3 % → maska bez zmeny. Navyše pomer z fotky (rozložené)
+a z osoby (spredu) nie sú priamo porovnateľné – priliehavé sú na osobe užšie,
+voľné širšie. Preto 3. verzia počíta cieľ podľa voľnosti (vyššie)._
 
 _Prvá verzia (2026-11-13) počítala cieľovú šírku absolútne – od stredu nohy
 z DensePose × šírka stehien (tela). Na Kaggle sa celá zmestila do masky
@@ -595,6 +610,13 @@ strih** v Pokročilých nastaveniach.
   maska ako rovný stĺpec ako na Kaggle) pridali baggy tepláky +22 % plochy
   masky (rozšírenie rastie smerom k lemu), rovné +7 %, úzke nič.
 - Maska pre `upper` a `overall` je bit po bite rovnaká ako pred zmenou.
+
+**Lokálne overenie 3. verzie (2026-11-17, bez GPU).** Fotky nohavíc:
+4× baggy → `široké` (lem 0,47–0,83; predtým zelené menčestráky `rovné`),
+rovné 0,38–0,40, skinny 0,32. Simulácia na fotke chalana v skinny riflách
+(SCHP / DensePose nahradené segmentáciou riflí podľa farby, maska = konvexný
+obal riflí): baggy +18 až +40 % plochy masky (smerom k lemu viac), rovné
++1 %, skinny 0 %.
 
 **Riziká / overiť na Kaggle.**
 

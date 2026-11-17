@@ -60,8 +60,8 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
 | Súbor | Obsah |
 |---|---|
 | `app.py` | spustenie (argumenty `--share`, `--demo`, `--host`, `--port`), DEMO stub, adaptér `run_tryon()`, `build_app()` |
-| `config.py` | prepínače `FEATURES`, typy oblečenia, predvolené hodnoty (kroky 20–50, seed 42, …), farby, písma, všetky texty UI (slovensky), obsah tabu „O projekte“ |
-| `ui/tabs.py` | hlavička, tab Skúšanie (karty Osoba + Produkt = Výsledok, pokročilé nastavenia, príklady), tab O projekte, budúce taby |
+| `config.py` | typy oblečenia, predvolené hodnoty (kroky 30, seed 42, …), farby, písma, všetky texty UI (slovensky) |
+| `ui/tabs.py` | hlavička a stránka skúšania (karty Osoba + Produkt = Výsledok, prepínače, skryté vstupy API) – bez tabov |
 | `ui/theme.py` | Gradio téma, CSS premenné z `config.COLORS`, `<head>` s písmami, vynútenie svetlého režimu |
 | `ui/styles.css`, `ui/page.css` | vzhľad komponentov a stránky |
 | `src/try_on.py` | backend s CatVTON ([backend.md](backend.md)) |
@@ -69,7 +69,7 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
 | `src/cloth_type.py` | typ oblečenia pravidlami nad siluetou (bez AI) pre `cloth_type="auto"` |
 | `scripts/analyza_strihu.py` | lokálny test analýzy strihu nohavíc (bez GPU) |
 | `scripts/typ_oblecenia.py` | lokálny test rozpoznania typu oblečenia (bez GPU) |
-| `assets/examples/` | ukážkové osoby (`person_*.png`) a oblečenie (`cloth_*.png`) |
+| `assets/examples/` | ukážkové osoby (`person_*.png`) a oblečenie (`cloth_*.png`) na lokálne testy (UI ich už neponúka) |
 | `kaggle/run.ipynb` | spúšťač na Kaggle |
 | `requirements.txt` / `requirements-gpu.txt` | závislosti UI / backendu |
 | `docs/` | dokumentácia, `docs/analyzy/` analýzy úloh |
@@ -77,18 +77,17 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
 
 ## UI
 
-- **Tab Skúšanie:** karta Osoba + karta Produkt (RGBA – priehľadné pozadie
+- **Jedna stránka bez tabov** (taby Skúšanie / O projekte, Pokročilé nastavenia
+  a Príklady odstránené 2026-11-17).
+- Karta Osoba + karta Produkt (RGBA – priehľadné pozadie
   produktu sa zachová pre siluetu, CatVTON dostane fotku na bielom) = karta Výsledok, typ
   oblečenia (Automaticky / Vrchný diel / Spodný diel / Celé / šaty;
-  predvolene Automaticky – typ určí CLIP a stavový riadok ho vypíše),
+  predvolene Automaticky – typ určia pravidlá a stavový riadok ho vypíše),
   tlačidlo Vyskúšať, stiahnutie výsledku (PNG).
-- **Pokročilé nastavenia:** počet krokov (20–50, predvolene 30), seed
-  (−1 = náhodný), vložiť pôvodnú tvár, zobraziť masku, respektovať strih
-  (predvolene zapnuté; vypnuté → `fit="off"`, maska bez rozšírenia podľa strihu).
-- **Príklady:** obrázky z `assets/examples/`.
-- **Tab O projekte:** popis pipeline, autori, technológie (texty v `config.ABOUT`).
-- **Budúce taby:** zapínajú sa flagom v `config.FEATURES` (`compare_masks`,
-  `compare_models`, `history`, `metrics`); obsah v `build_<nazov>_tab()`.
+- **Prepínače pod tlačidlom:** zobraziť masku, respektovať strih (predvolene
+  zapnuté; vypnuté → `fit="off"`, maska bez rozšírenia podľa strihu).
+- Kroky (30), seed (42) a vloženie tváre (áno) sú **skryté vstupy** – v UI sa
+  nenastavujú, ale ostávajú vo vstupoch API `/try_on` (kontrakt sa nemení).
 - Generovanie beží po jednom (`concurrency_limit=1`), chyby a nedostatok
   pamäte GPU sa zobrazia ako upozornenie.
 - **DEMO režim:** keď sa backend nedá načítať, v hlavičke je štítok „Demo“

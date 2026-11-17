@@ -154,16 +154,16 @@ Vypíše typ (upper / lower / overall alebo „neisté“), dôvod a znaky silue
 
 ## Použitie
 
-1. Nahraj fotku osoby (karta **Osoba**) a fotku oblečenia (karta **Produkt**),
-   alebo klikni na príklad v sekcii **Príklady**.
+1. Nahraj fotku osoby (karta **Osoba**) a fotku oblečenia (karta **Produkt**).
 2. Typ oblečenia nechaj na **Automaticky** (rozpozná ho zo siluety
    bez AI; keď si nie je istý, vyzve ťa vybrať ručne), alebo vyber
    ručne: Vrchný diel / Spodný diel / Celé / šaty.
 3. Klikni **Vyskúšať**. Výsledok si stiahneš tlačidlom **Stiahnuť**.
 
-V sekcii **Pokročilé nastavenia** sú počet krokov (20–50), seed (−1 = náhodný),
-vloženie pôvodnej tváre, zobrazenie masky a **Respektovať strih** (vypni na
-porovnanie bez rozšírenia masky podľa strihu nohavíc; cez API je vždy zapnuté).
+Pod tlačidlom sú prepínače **Zobraziť masku** a **Respektovať strih** (vypni
+na porovnanie bez rozšírenia masky podľa strihu nohavíc; cez API je vždy
+zapnuté). Počet krokov (30), seed (42) a vloženie pôvodnej tváre sa v UI
+nenastavujú – dajú sa zmeniť len cez API.
 
 ## API
 
@@ -206,13 +206,13 @@ podrobnosti v [docs/backend.md](docs/backend.md).
 ## Štruktúra
 
 ```
-app.py                # spustenie, adaptér run_tryon(), skladanie tabov
-config.py             # FEATURES, texty UI, farby, predvolené hodnoty
+app.py                # spustenie, adaptér run_tryon(), skladanie stránky
+config.py             # typy oblečenia, texty UI, farby, predvolené hodnoty
 ui/theme.py           # Gradio téma (farby, písma)
 ui/styles.css         # štýly komponentov (karty, „+“ a „=“, segmentové tlačidlá)
 ui/page.css           # globálne štýly stránky (vkladané do <head>)
-ui/tabs.py            # build_tryon_tab(), build_about_tab(), budúce taby
-assets/examples/      # ukážkové osoby a produkty
+ui/tabs.py            # build_header(), build_tryon() – jedna stránka bez tabov
+assets/examples/      # ukážkové osoby a produkty (lokálne testy)
 src/try_on.py         # backend: CatVTON (potrebuje GPU)
 src/masking.py        # úprava masky: dĺžka vrchu, šaty, ochrana rúk, strih nohavíc
 src/cloth_type.py     # typ oblečenia pravidlami nad siluetou (bez AI)
@@ -229,17 +229,3 @@ docs/analyzy/         # analýzy úloh pred implementáciou
 Kód CatVTON nie je súčasťou repa – na Kaggle sa klonuje za behu, lokálne si ho
 môžeš naklonovať do `CatVTON/` (je v `.gitignore`) len na čítanie kódu.
 
-### Budúce funkcie
-
-V `config.py` stačí prepnúť flag na `True` a zobrazí sa nový tab:
-
-```python
-FEATURES = {
-    "compare_masks": False,   # Porovnanie: AutoMasker vs. naša maska
-    "compare_models": False,  # CatVTON / IDM-VTON
-    "history": False,         # história výsledkov v session
-    "metrics": False,         # ArcFace podobnosť tváre
-}
-```
-
-Obsah tabov sa dopĺňa vo funkciách `build_<nazov>_tab()` v `ui/tabs.py`.
