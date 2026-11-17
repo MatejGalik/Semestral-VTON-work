@@ -4,7 +4,9 @@ Kontrakt (používa ho app.py a API /try_on):
     try_on(person_img, cloth_img, cloth_type, **options) -> {"result", "mask", "info"}
 
     person_img, cloth_img : PIL.Image
-    cloth_type            : "upper" | "lower" | "overall"
+    cloth_type            : "upper" | "lower" | "overall" | "auto"
+                            ("auto" = typ určí CLIP z fotky oblečenia;
+                            zistený typ je v info["cloth_type"])
     options               : steps (int), seed (int), paste_face (bool),
                             guidance_scale (float, voliteľné),
                             sleeves ("auto" | "short" | "long" | "sleeveless",
@@ -51,6 +53,12 @@ MASK_BLUR = 9                                 # rozmazanie okraja masky (ako v C
 
 # Úprava masky podľa nového oblečenia (CLIP zero-shot)
 CLIP_MODEL = "openai/clip-vit-base-patch32"
+CLOTH_TYPE_PROMPTS = {                        # cloth_type="auto" → typ oblečenia
+    "upper": "a product photo of a top: t-shirt, shirt, blouse, sweater, hoodie or jacket",
+    "lower": "a product photo of a bottom: pants, trousers, jeans, shorts or a skirt",
+    "overall": "a product photo of a dress or a jumpsuit",
+}
+CLOTH_TYPE_FALLBACK = "upper"                 # ak CLIP nie je k dispozícii
 SLEEVE_PROMPTS = {                            # trieda → popis pre CLIP (zero-shot)
     "short": "a product photo of a short-sleeved top, t-shirt or dress",
     "long": "a product photo of a long-sleeved top, shirt, sweater, jacket or dress",
@@ -207,7 +215,7 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
     paste_face = bool(options.get("paste_face", True))
     guidance = float(options.get("guidance_scale", GUIDANCE_SCALE))
 
-    if cloth_type not in ("upper", "lower", "overall"):
+    if cloth_type not in ("upper", "lower", "overall", "auto"):
         raise ValueError(f"Neznámy typ oblečenia: {cloth_type!r}")
 
     started = time.perf_counter()
@@ -217,6 +225,14 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
 
     person_r = resize_and_crop(person, (WIDTH, HEIGHT))
     cloth_r = resize_and_padding(cloth, (WIDTH, HEIGHT))
+
+    # 0) Typ oblečenia: ručne zvolený, alebo pri "auto" z fotky (CLIP)
+    t_conf, t_src = 1.0, "manual"
+    if cloth_type == "auto":
+        detected, t_conf, t_src = _classify(cloth_r, CLOTH_TYPE_PROMPTS, "auto")
+        cloth_type = detected or CLOTH_TYPE_FALLBACK
+        if detected is None:
+            t_src = "fallback"
 
     # 1) Nové oblečenie (CLIP): rukáv pre vrch aj celé, dĺžka pre vrch aj šaty
     sleeves, s_conf, s_src = (None, 0.0, "-")
@@ -271,6 +287,7 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
 
     info = {
         "model": "CatVTON mix-48k-1024",
+        "cloth_type": _fmt(cloth_type, t_conf, t_src),
         "steps": steps,
         "seed": seed,
         "guidance_scale": guidance,

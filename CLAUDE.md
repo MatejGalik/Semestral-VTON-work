@@ -13,7 +13,7 @@ backend: `docs/backend.md`.
 
 - `try_on(person_img, cloth_img, cloth_type, **options) -> {"result", "mask", "info"}` v `src/try_on.py`.
 - API endpoint `/try_on`: názov a poradie vstupov (`person, cloth, cloth_type, steps, seed, paste_face, show_mask`) – používa ho rozšírenie do prehliadača.
-- Hodnoty `cloth_type`: `upper` / `lower` / `overall`.
+- Hodnoty `cloth_type`: `upper` / `lower` / `overall` / `auto` (auto = CLIP; pôvodné tri ostávajú kvôli rozšíreniu).
 - Lokálne bez GPU musí aplikácia bežať v DEMO režime (import backendu smie zlyhať).
 
 ## Prostredie

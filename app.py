@@ -6,7 +6,7 @@ Spustenie:
     python app.py --demo     # vynúti DEMO režim aj keď backend existuje
 
 API endpoint `/try_on` (pre rozšírenie do prehliadača) – poradie vstupov je pevné:
-    person_img, cloth_img, cloth_type ("upper"|"lower"|"overall"),
+    person_img, cloth_img, cloth_type ("upper"|"lower"|"overall"|"auto"),
     steps (int), seed (int, -1 = náhodný), paste_face (bool), show_mask (bool)
 výstupy: result, mask, download (súbor PNG), status (text)
 """
@@ -34,6 +34,7 @@ log = logging.getLogger("vton")
 CSS_PATH = Path(__file__).resolve().parent / "ui" / "styles.css"
 RESULTS_DIR = Path(tempfile.gettempdir()) / "vton_results"
 VALID_TYPES = {value for _, value in CLOTH_TYPES}
+TYPE_LABELS = {value: label for label, value in CLOTH_TYPES}
 
 
 # --------------------------------------------------------------------------- #
@@ -66,12 +67,15 @@ def _stub_try_on(person_img, cloth_img, cloth_type, **options) -> dict:
               font=font, fill=(255, 255, 255, 255))
     img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
 
+    if cloth_type == "auto":
+        cloth_type = "upper"  # DEMO nemá CLIP – ako fallback backendu
     region = {"upper": (0.18, 0.55), "lower": (0.45, 0.95), "overall": (0.18, 0.95)}
     y0, y1 = region.get(cloth_type, (0.18, 0.95))
     mask = Image.new("L", img.size, 0)
     ImageDraw.Draw(mask).rectangle([w * 0.2, h * y0, w * 0.8, h * y1], fill=255)
 
-    return {"result": img, "mask": mask, "info": {"demo": True, **options}}
+    info = {"demo": True, "cloth_type": f"{cloth_type} (demo)", **options}
+    return {"result": img, "mask": mask, "info": info}
 
 
 def _load_backend():
@@ -137,6 +141,10 @@ def run_tryon(person_img, cloth_img, cloth_type, steps, seed, paste_face, show_m
 
     mask = out.get("mask")
     status = f'{T["done_in"].format(seconds=elapsed)} · seed {seed}'
+    if cloth_type == "auto":
+        detected = str(out.get("info", {}).get("cloth_type", "")).split(" ")[0]
+        if detected in TYPE_LABELS:
+            status += " · " + T["detected_type"].format(label=TYPE_LABELS[detected])
     return (
         result,
         gr.update(value=mask, visible=bool(show_mask and mask is not None)),

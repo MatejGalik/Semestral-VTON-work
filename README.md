@@ -146,7 +146,8 @@ v [docs/backend.md](docs/backend.md#rozšírenie-masky-podľa-strihu-nohavíc-lo
 
 1. Nahraj fotku osoby (karta **Osoba**) a fotku oblečenia (karta **Produkt**),
    alebo klikni na príklad v sekcii **Príklady**.
-2. Vyber typ oblečenia: Vrchný diel / Spodný diel / Celé / šaty.
+2. Typ oblečenia nechaj na **Automaticky** (rozpozná ho CLIP), alebo vyber
+   ručne: Vrchný diel / Spodný diel / Celé / šaty.
 3. Klikni **Vyskúšať**. Výsledok si stiahneš tlačidlom **Stiahnuť**.
 
 V sekcii **Pokročilé nastavenia** sú počet krokov (20–50), seed (−1 = náhodný),
@@ -165,7 +166,7 @@ client = Client("https://….gradio.live/")
 result, mask, download, status = client.predict(
     handle_file("osoba.jpg"),     # person_img
     handle_file("tricko.jpg"),    # cloth_img
-    "upper",                      # cloth_type: "upper" | "lower" | "overall"
+    "upper",                      # cloth_type: "upper" | "lower" | "overall" | "auto"
     30,                           # steps (20–50)
     42,                           # seed (-1 = náhodný)
     True,                         # paste_face

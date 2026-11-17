@@ -1,6 +1,6 @@
 # Backend – CatVTON (`src/try_on.py`)
 
-Stav k 2026-11-13. Popisuje, ako funguje generovanie, prečo je spravené tak,
+Stav k 2026-11-17. Popisuje, ako funguje generovanie, prečo je spravené tak,
 ako je, a čo sme zistili pri testovaní.
 
 ## Prehľad
@@ -12,6 +12,8 @@ UI (app.py, run_tryon)
 src/try_on.py: try_on()
    1. predspracovanie   – osoba: výrez 3:4 + zmena na 768×1024
                           oblečenie: doplnenie bielym okrajom na 768×1024
+   1b. typ oblečenia    – len pri cloth_type="auto": CLIP určí upper /
+                          lower / overall (CLOTH_TYPE_PROMPTS)
    2. nové oblečenie    – CLIP z fotky oblečenia: rukáv (upper / overall),
                           dĺžka vrchu (upper), dĺžka šiat (overall);
                           strih nohavíc (lower) – vlastný algoritmus, bez modelu
@@ -36,6 +38,7 @@ SCHP, difúzny model). 🟢 = klasický algoritmus, 🔵 = natrénovaný AI mode
 | # | Krok | Typ | Dá sa bez AI? |
 |---|---|---|---|
 | 1 | Predspracovanie | 🟢 | už je |
+| 1b | Typ oblečenia pri `auto` (CLIP) | 🔵 | čiastočne (silueta: dve nohavice → `lower`) |
 | 2 | Rukáv a dĺžka nového oblečenia (CLIP) | 🔵 | áno, silueta oblečenia (len na čistom pozadí) |
 | 2b | Strih nohavíc (`analyze_pants`) | 🟢 | už je |
 | 3a | Póza / časti tela (DensePose) | 🔵 | nie |
@@ -128,7 +131,7 @@ try_on(person_img, cloth_img, cloth_type, **options) -> dict
 | Parameter | Typ | Význam |
 |---|---|---|
 | `person_img`, `cloth_img` | `PIL.Image` | fotka osoby a oblečenia |
-| `cloth_type` | `"upper"` \| `"lower"` \| `"overall"` | ktorú časť tela maskovať |
+| `cloth_type` | `"upper"` \| `"lower"` \| `"overall"` \| `"auto"` | ktorú časť tela maskovať; `"auto"` = typ určí CLIP z fotky oblečenia (predvolené v UI) |
 | `steps` | `int` (predvolene 30) | počet krokov difúzie; CatVTON odporúča 50 |
 | `seed` | `int` (predvolene 42) | rovnaký seed = rovnaký výsledok |
 | `paste_face` | `bool` (predvolene `True`) | vrátiť pôvodné pixely mimo masky |
@@ -138,12 +141,29 @@ try_on(person_img, cloth_img, cloth_type, **options) -> dict
 | `fit` | `"auto"` \| `"off"` | voliteľné, `"off"` vypne rozšírenie masky podľa strihu nohavíc (na porovnanie pred / po); UI ho neposiela |
 
 Návrat: `result` (výsledok v pôvodnom rozmere fotky), `mask` (upravená maska
-v pôvodnom rozmere), `info` (model, kroky, seed, rozlíšenie, GPU, čas, rukávy, dĺžka,
+v pôvodnom rozmere), `info` (model, typ oblečenia – napr. `"lower (0.93, clip)"`, kroky, seed, rozlíšenie, GPU, čas, rukávy, dĺžka,
 vykonané úpravy masky, podiel masky, chránené časti, strih nohavíc). `info` UI nezobrazuje – vypisuje sa do konzoly ako
 `try_on: {...}` (na Kaggle vo výstupe poslednej bunky).
 
 API endpoint `/try_on` v `app.py` sa týmto nemení – rozšírenie do prehliadača
-funguje ďalej.
+funguje ďalej (hodnota `"auto"` len pribudla, pôvodné tri ostávajú).
+
+## Automatické rozpoznanie typu oblečenia (`cloth_type="auto"`)
+
+_Stav: **implementované 2026-11-17, overené lokálne v DEMO režime, čaká na test na Kaggle.**_
+
+- CLIP zero-shot (ten istý model ako pri rukávoch) nad fotkou oblečenia
+  s bielym okrajom, 3 triedy `CLOTH_TYPE_PROMPTS`: vrch / spodok (nohavice,
+  šortky, sukňa) / šaty a overal. Vyberie sa najpravdepodobnejšia, bez prahu.
+- Ak CLIP nie je načítaný → `CLOTH_TYPE_FALLBACK` = `upper`.
+- Ďalej sa pokračuje presne ako pri ručne zvolenom type.
+- `info["cloth_type"]` = zistený typ, istota a zdroj (`clip` / `manual` /
+  `fallback`); UI ho ukáže v stavovom riadku („rozpoznané: Spodný diel“).
+- Ručný výber v UI ostáva na opravu, keď sa CLIP pomýli.
+
+**Riziká / overiť na Kaggle.** Hraničné kusy (overal, dlhá tunika vs. krátke
+šaty, dlhý kabát), fotka modelky v celom outfite (CLIP nevie, ktorý kus sa
+skúša). Možné zlepšenie: ak `analyze_pants` nájde dve nohavice → `lower`.
 
 ## Načítanie modelu
 
@@ -531,8 +551,10 @@ vypne (porovnanie pred / po s rovnakým seedom).
 
 1. Otestovať na Kaggle ochranu rúk a predĺženie pre dlhý vrch (~10 fotiek
    s rukami pri tele; krátky ↔ dlhý rukáv, tričko → tunika), masku pre šaty
-   (mini / po kolená / maxi, muž aj žena) a rozšírenie masky pre široké
-   nohavice (`fit="auto"` vs. `"off"`, rovnaký seed) a výsledky zapísať do Zistení.
+   (mini / po kolená / maxi, muž aj žena), rozšírenie masky pre široké
+   nohavice (`fit="auto"` vs. `"off"`, rovnaký seed) a automatické
+   rozpoznanie typu (`cloth_type="auto"`, ~15 fotiek vrch / spodok / šaty)
+   a výsledky zapísať do Zistení.
 2. Ručný prepínač rukávov a dĺžky (auto / …) v UI, ak sa CLIP často mýli.
 3. Ručná úprava masky v UI (štetec) – CatVTON vlastnú masku podporuje.
 4. Riešenie rozmazania pri veľkých fotkách (nezväčšovať výsledok / voľba

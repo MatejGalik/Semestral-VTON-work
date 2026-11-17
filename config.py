@@ -21,14 +21,15 @@ FEATURES = {
 
 # --------------------------------------------------------------------------- #
 # Typ oblečenia: (popis v UI, hodnota pre backend). Hodnoty sa nesmú meniť –
-# používa ich aj API endpoint /try_on.
+# používa ich aj API endpoint /try_on. "auto" = typ určí backend (CLIP).
 # --------------------------------------------------------------------------- #
 CLOTH_TYPES = [
+    ("Automaticky", "auto"),
     ("Vrchný diel", "upper"),
     ("Spodný diel", "lower"),
     ("Celé / šaty", "overall"),
 ]
-DEFAULT_CLOTH_TYPE = "upper"
+DEFAULT_CLOTH_TYPE = "auto"
 
 # Pokročilé nastavenia
 STEPS_MIN, STEPS_MAX, STEPS_DEFAULT = 20, 50, 30
@@ -86,6 +87,7 @@ TEXTS = {
     "download": "Stiahnuť",
     "generating": f"Generujem… (≈{EXPECTED_SECONDS} s)",
     "done_in": "Vygenerované za {seconds:.1f} s",
+    "detected_type": "rozpoznané: {label}",
     "advanced": "Pokročilé nastavenia",
     "steps": "Počet krokov",
     "steps_info": "Viac krokov = vyššia kvalita, dlhšie čakanie.",

@@ -1,6 +1,6 @@
 # Architektúra a technológie
 
-Stav k 2026-11-13. Celkový pohľad na projekt: z čoho sa skladá, aké technológie
+Stav k 2026-11-17. Celkový pohľad na projekt: z čoho sa skladá, aké technológie
 používa, ako sa spúšťa a ako sa na ňom pracuje. Podrobnosti o modeli sú
 v [backend.md](backend.md).
 
@@ -75,8 +75,9 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
 ## UI
 
 - **Tab Skúšanie:** karta Osoba + karta Produkt = karta Výsledok, typ
-  oblečenia (Vrchný diel / Spodný diel / Celé / šaty), tlačidlo Vyskúšať,
-  stiahnutie výsledku (PNG).
+  oblečenia (Automaticky / Vrchný diel / Spodný diel / Celé / šaty;
+  predvolene Automaticky – typ určí CLIP a stavový riadok ho vypíše),
+  tlačidlo Vyskúšať, stiahnutie výsledku (PNG).
 - **Pokročilé nastavenia:** počet krokov (20–50, predvolene 30), seed
   (−1 = náhodný), vložiť pôvodnú tvár, zobraziť masku.
 - **Príklady:** obrázky z `assets/examples/`.
@@ -93,7 +94,7 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
 Jeden verejný endpoint **`/try_on`**. Názov a poradie vstupov sa **nesmú
 meniť** – používa ho rozšírenie do prehliadača.
 
-- Vstupy: `person_img`, `cloth_img`, `cloth_type` (`upper`/`lower`/`overall`),
+- Vstupy: `person_img`, `cloth_img`, `cloth_type` (`upper`/`lower`/`overall`/`auto`),
   `steps`, `seed`, `paste_face`, `show_mask`
 - Výstupy: `result`, `mask`, `download` (PNG), `status` (text)
 
@@ -129,7 +130,8 @@ režim.
 
 ```
 1. predspracovanie   osoba → výrez 3:4, 768×1024; oblečenie → biely okraj
-2. CLIP              rukáv (upper / overall) + dĺžka vrchu (upper)
+2. CLIP              typ oblečenia (len pri auto), rukáv (upper / overall)
+                     + dĺžka vrchu (upper)
    strih nohavíc     profil šírky z fotky nohavíc (lower, vlastný algoritmus)
 3. maska             AutoMasker (DensePose + SCHP) podľa typu
 4. úprava masky      + predĺženie (dlhý vrch), + rozšírenie (široké nohavice),
