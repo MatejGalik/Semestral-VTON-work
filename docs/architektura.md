@@ -64,7 +64,7 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
 | `ui/theme.py` | Gradio téma, CSS premenné z `config.COLORS`, `<head>` s písmami, vynútenie svetlého režimu |
 | `ui/styles.css`, `ui/page.css` | vzhľad komponentov a stránky |
 | `src/try_on.py` | backend s CatVTON ([backend.md](backend.md)) |
-| `src/masking.py` | úprava masky AutoMaskera: predĺženie pre dlhý vrch, tvar šiat, ochrana rúk, analýza strihu nohavíc a rozšírenie masky pre široké nohavice |
+| `src/masking.py` | úprava masky AutoMaskera: tvar šiat z fotky produktu (dĺžka, sukňa), ochrana dlaní, analýza strihu nohavíc a rozšírenie masky pre široké nohavice |
 | `src/cloth_type.py` | typ oblečenia pravidlami nad siluetou (bez AI) pre `cloth_type="auto"` |
 | `scripts/analyza_strihu.py` | lokálny test analýzy strihu nohavíc (bez GPU) |
 | `scripts/typ_oblecenia.py` | lokálny test rozpoznania typu oblečenia (bez GPU) |
@@ -84,7 +84,8 @@ s pevným kontraktom. Backend sa dá vymeniť (iný model, iná maska) bez zmeny
   predvolene Automaticky – typ určia pravidlá a stavový riadok ho vypíše),
   tlačidlo Vyskúšať, stiahnutie výsledku (PNG).
 - **Prepínače pod tlačidlom:** zobraziť masku, respektovať strih (predvolene
-  zapnuté; vypnuté → `fit="off"`, maska bez rozšírenia podľa strihu). Posiela
+  zapnuté; vypnuté → `fit="off"`, maska bez rozšírenia nohavíc a bez tvaru
+  šiat z fotky). Posiela
   ho len UI, API `/try_on` ho nemá.
 - Kroky (50), seed (42) a vloženie tváre (áno) sú **skryté vstupy** – v UI sa
   nenastavujú, ale ostávajú vo vstupoch API `/try_on` (kontrakt sa nemení).
@@ -145,7 +146,7 @@ režim.
    typ oblečenia     len pri auto: pravidlá nad siluetou (bez AI), neisté → ručne
 2. strih nohavíc     profil šírky z fotky nohavíc (lower, vlastný algoritmus)
 3. maska             AutoMasker (DensePose + SCHP) podľa typu
-4. úprava masky      tvar šiat, + rozšírenie (široké nohavice), − dlane
+4. úprava masky      tvar šiat z fotky, + rozšírenie (široké nohavice), − dlane
 5. blur okraja masky
 6. CatVTON           50 krokov difúzie – najdlhší krok
 7. paste_face        mimo masky pôvodné pixely

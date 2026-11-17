@@ -161,7 +161,7 @@ Vypíše typ (upper / lower / overall alebo „neisté“), dôvod a znaky silue
 3. Klikni **Vyskúšať**. Výsledok si stiahneš tlačidlom **Stiahnuť**.
 
 Pod tlačidlom sú prepínače **Zobraziť masku** a **Respektovať strih** (vypni
-na porovnanie bez rozšírenia masky podľa strihu nohavíc; cez API je vždy
+na porovnanie bez tvaru nohavíc a šiat podľa fotky produktu; cez API je vždy
 zapnutý). Počet krokov (50), seed (42) a vloženie pôvodnej tváre sa v UI
 nenastavujú – dajú sa zmeniť len cez API.
 
@@ -214,7 +214,7 @@ ui/page.css           # globálne štýly stránky (vkladané do <head>)
 ui/tabs.py            # build_header(), build_tryon() – jedna stránka bez tabov
 assets/examples/      # ukážkové osoby a produkty (lokálne testy)
 src/try_on.py         # backend: CatVTON (potrebuje GPU)
-src/masking.py        # úprava masky: tvar šiat, ochrana dlaní, strih nohavíc
+src/masking.py        # úprava masky: tvar šiat z fotky, ochrana dlaní, strih nohavíc
 src/cloth_type.py     # typ oblečenia pravidlami nad siluetou (bez AI)
 scripts/analyza_strihu.py  # lokálny test analýzy strihu nohavíc (bez GPU)
 scripts/typ_oblecenia.py   # lokálny test rozpoznania typu oblečenia (bez GPU)

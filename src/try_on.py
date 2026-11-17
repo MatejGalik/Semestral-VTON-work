@@ -170,6 +170,10 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
     pants_fit = None
     if cloth_type == "lower" and options.get("fit", "auto") != "off":
         pants_fit = masking.analyze_pants(cloth_img)
+    # Tvar šiat z fotky (vlastný algoritmus, bez modelu) – dĺžka a rozšírenie sukne
+    dress_fit = None
+    if cloth_type == "overall" and options.get("fit", "auto") != "off":
+        dress_fit = masking.analyze_dress(cloth_img)
 
     # 2) Maska AutoMaskera + úpravy (tvar šiat, ochrana dlaní, rozšírenie nohavíc)
     masker_out = _automasker(person_r, cloth_type)
@@ -178,6 +182,7 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
         masker_out,
         cloth_type,
         pants_fit=pants_fit,
+        dress_fit=dress_fit,
     )
     mask_soft = _mask_processor.blur(mask, blur_factor=MASK_BLUR)
 
@@ -213,7 +218,7 @@ def try_on(person_img: Image.Image, cloth_img: Image.Image, cloth_type: str, **o
         "mask_changes": ", ".join(changes) or "-",
         "mask_ratio": masking.mask_ratio(mask),
         "protected": ", ".join(protected) or "-",
-        "fit": masking.describe_fit(pants_fit),
+        "fit": masking.describe_dress(dress_fit) if cloth_type == "overall" else masking.describe_fit(pants_fit),
         "resolution": f"{WIDTH}x{HEIGHT}",
         "device": f"{_GPU_NAME} ({str(_DTYPE).replace('torch.', '')})",
         "seconds": round(time.perf_counter() - started, 1),

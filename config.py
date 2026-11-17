@@ -70,7 +70,7 @@ TEXTS = {
     "detected_type": "rozpoznané: {label}",
     "show_mask": "Zobraziť masku",
     "respect_fit": "Respektovať strih",
-    "respect_fit_info": "Široké nohavice rozšíria masku. Vypni na porovnanie.",
+    "respect_fit_info": "Tvar nohavíc a šiat podľa fotky produktu. Vypni na porovnanie.",
     # Chyby (gr.Warning)
     "warning_title": "Upozornenie",
     "error_title": "Chyba",

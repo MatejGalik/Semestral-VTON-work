@@ -119,7 +119,7 @@ try_on(person_img, cloth_img, cloth_type, **options) -> dict
 | `seed` | `int` (predvolene 42) | rovnaký seed = rovnaký výsledok |
 | `paste_face` | `bool` (predvolene `True`) | vrátiť pôvodné pixely mimo masky |
 | `guidance_scale` | `float` (predvolene 2.5) | voliteľné, UI ho zatiaľ neposiela |
-| `fit` | `"auto"` \| `"off"` | voliteľné, `"off"` vypne rozšírenie masky podľa strihu nohavíc (na porovnanie pred / po); UI ho posiela podľa prepínača „Respektovať strih“, API `/try_on` ho nemá (vždy `auto`) |
+| `fit` | `"auto"` \| `"off"` | voliteľné, `"off"` vypne rozšírenie masky podľa strihu nohavíc a tvar šiat z fotky (na porovnanie pred / po); UI ho posiela podľa prepínača „Respektovať strih“, API `/try_on` ho nemá (vždy `auto`) |
 
 Návrat: `result` (výsledok v pôvodnom rozmere fotky), `mask` (upravená maska
 v pôvodnom rozmere), `info` (model, typ oblečenia – napr. `"lower (rules)"`, kroky, seed, rozlíšenie, GPU, čas,
@@ -394,27 +394,49 @@ pravidlami bez AI.
 
 ## Maska pre šaty (`overall`)
 
-_Stav: **implementované 2026-11-09; rez podľa dĺžky odstránený 2026-11-17 (bez CLIP).**_
+_Stav: **2. verzia (tvar šiat z fotky produktu) implementovaná 2026-11-17, overená simuláciou, čaká na test na Kaggle.**_
 
-**Problém.** Pozri Zistenia „Šaty na mužovi“ – maska AutoMaskera po členky
-a so siluetou kabáta → nohavice a kardigán namiesto krátkych šiat.
+**Problém.** Maska AutoMaskera pre `overall` je stĺpec od ramien po členky
+v tvare nôh. Model ho „číta“ ako nohavice: muž v riflách + dlhé šaty → hore
+top šiat, dole široké modré nohavice (2026-11-17; predtým „Šaty na mužovi“).
+Rez podľa dĺžky z CLIP zmizol s CLIP a ani by nepomohol – dlhé šaty majú lem
+pri členkoch.
 
-**Tvar tela.** Maska AutoMaskera sa oreže na povolenú oblasť:
-DensePose trup + ruky + nohy roztiahnuté o ~25 px (`DRESS_BODY_DIVISOR`)
-\+ obdĺžnik sukne od ¾ trupu nadol, širší o 25 % šírky trupu na každú stranu
-(`DRESS_SKIRT_MARGIN`, priestor pre áčkový strih). Masku len zmenšuje, nikdy
-nepridáva.
+**Riešenie – vlastný algoritmus, žiadny model** (`analyze_dress`, `_dress_from_product`):
 
-Rez pri leme podľa dĺžky šiat (CLIP) bol odstránený 2026-11-17 – maska
-siaha po celej dĺžke tela, dĺžku šiat určí model z fotky.
+1. **Fotka šiat** (silueta ako pri nohaviciach): hruď = prvý riadok so šírkou
+   ≥ ½ šírky v strede šiat (nad ním ramienka / výstrih), profil šírky / hruď
+   v 20 bodoch od hrude po lem, pás = najužšie miesto medzi hruďou a 60 % výšky
+   (zreteľný, ak < 95 % hrude).
+2. **Osoba** (DensePose trup): hruď = 20 % výšky trupu pod vrchom, šírka trupu
+   tam; pás = 65 % výšky trupu (`DRESS_WAIST_Y`).
+3. **Lem:** so zreteľným pásom lem = hruď + (lem − hruď) / (pás − hruď) z fotky
+   × (pás − hruď) osoby; bez pásu podľa šírky hrude (rozložené šaty ≈ 1 / 0,75
+   × hruď osoby, `DRESS_FLAT_TO_BODY`). Najnižšie nad chodidlami (DensePose /
+   topánky SCHP).
+4. **Maska:** nad hruďou maska AutoMaskera, od hrude po lem tvar šiat (šírka
+   z profilu × 0,9 – `DRESS_DRAPE`, aspoň šírka trupu, + rezerva 4 %), ruky
+   z AutoMaskera, pôvodné nohavice nad lemom celé (roztiahnuté – nech z nich
+   nič nevidno). Pod lemom nič, topánky nikdy.
+5. Bez fotky šiat (rušné pozadie) alebo pri vypnutom **Respektovať strih**
+   (`fit="off"`) → 1. verzia: maska AutoMaskera zúžená na telo + sukňu
+   (`_dress_shape`).
 
-**Výstup v `info`:** `"mask_changes": "šaty: tvar tela"`.
+**Výstup v `info`:** `"fit": "šaty (dĺžka 3.5× hruď, lem 1.28× hruď)"`,
+`"mask_changes": "šaty: tvar z fotky (lem 91% výšky)"`.
+
+**Lokálne overenie (simulácia, 2026-11-17).** Chalan v riflách (trup a rifle
+podľa farby namiesto DensePose / SCHP): dlhé saténové šaty → tvar A po
+členky (lem 91 %), krátke červené → lem nad kolenom (71 %, pod ním pôvodné
+rifle), šaty bez pásu (ukážka) → podľa šírky po členky.
 
 **Riziká / overiť na Kaggle.**
 
-- Tesnejšia maska môže „stiahnuť“ šaty k telu (poučenie zo Sapiens) – ak áno,
-  zväčšiť `DRESS_BODY_DIVISOR` / `DRESS_SKIRT_MARGIN`.
-- Pôvodné voľné oblečenie mimo roztiahnutého tela (široký kabát) ostane.
+- Model môže pod sukňou aj tak dokresliť nohavice (silný vplyv mužskej
+  postavy a topánok).
+- Krátke šaty: pod lemom ostanú pôvodné nohavice (rifle) – zámerne, model
+  nedokresľuje holé nohy spoľahlivo.
+- Poloha pásu (65 % trupu) a mierka sú odhad; rozkročená póza → tvar nesedí.
 
 ## Rozšírenie masky podľa strihu nohavíc (`lower`)
 

@@ -1,8 +1,9 @@
 """Úprava masky z AutoMaskera (CatVTON: DensePose + SCHP) podľa nového oblečenia.
 
 Postup (adjust_mask):
-1. šaty         – `overall`: maska sa zúži na telo + sukňu (bez „kabátovej“
-                  siluety AutoMaskera)
+1. šaty         – `overall`: maska v tvare šiat z fotky produktu (analyze_dress:
+                  dĺžka a rozšírenie sukne), priložená na trup osoby; bez
+                  fotky šiat len telo + sukňa (bez „kabátovej“ siluety AutoMaskera)
 2. ochrana      – vyreže dlane
 3. nohavice     – `lower`: podľa voľnosti nových nohavíc (analyze_pants)
                   sa určí cieľová šírka na osobe (noha z DensePose → šírka
@@ -24,6 +25,14 @@ PROTECT_DILATE = 2                    # roztiahnutie chránenej oblasti rúk (it
 # Šaty (overall): maska len na telo + sukňa (bez „kabátovej“ siluety AutoMaskera)
 DRESS_SKIRT_MARGIN = 0.25             # sukňa: do šírky o 25 % šírky trupu na každú stranu
 DRESS_BODY_DIVISOR = 40               # roztiahnutie tela: jadro max(rozmer)/40 ≈ 25 px
+# Šaty podľa fotky produktu (analyze_dress → _dress_from_product)
+DRESS_SAMPLES = 20                    # body profilu šírky (hruď → lem)
+DRESS_FLAT_TO_BODY = 0.75             # šírka hrude osoby spredu ≈ 0,75 × šírka rozložených šiat
+DRESS_DRAPE = 0.9                     # sukňa na osobe ≈ 0,9 × šírka rozloženej sukne
+DRESS_BUST_Y = 0.2                    # hruď (začiatok profilu) = 20 % výšky trupu pod jeho vrchom
+DRESS_MARGIN = 0.04                   # rezerva okolo tvaru šiat (podiel šírky hrude)
+DRESS_WAIST_Y = 0.65                  # pás osoby = 65 % výšky trupu (DensePose) pod jeho vrchom
+DRESS_WAIST_MAX = 0.95                # pás na fotke = najužšie miesto, ak je < 95 % šírky hrude
 
 # Indexy tried (ako v CatVTON model/cloth_masker.py)
 DENSEPOSE_TORSO = (1, 2)
@@ -89,6 +98,110 @@ def _dress_shape(m: np.ndarray, densepose: np.ndarray) -> str | None:
     allowed[waist:, x0:x1] = True
     m &= allowed
     return "šaty: tvar tela"
+
+
+def analyze_dress(cloth: Image.Image) -> dict | None:
+    """Tvar šiat z produktovej fotky – len spracovanie obrazu, žiadny model.
+
+    Silueta (ako pri nohaviciach) → hruď = prvý riadok, kde je šírka aspoň
+    polovica šírky v strede šiat (nad ním sú ramienka / výstrih), šírka hrude
+    = medián nasledujúcich 8 % výšky. Profil = šírka / hruď v DRESS_SAMPLES
+    bodoch od hrude po lem, dĺžka = (lem − hruď) / hruď.
+    Pás = najužšie miesto medzi hruďou a 60 % výšky; ak je zreteľný,
+    `waist_len` = (lem − hruď) / (pás − hruď) – dĺžka podľa pásu, nie šírky.
+    Vráti {"profile", "length", "waist_len", "hem"} alebo None.
+    """
+    fg = silhouette(cloth)
+    if fg is None:
+        return None
+    ys, xs = np.nonzero(fg.any(axis=1))[0], np.nonzero(fg.any(axis=0))[0]
+    fg = fg[ys.min(): ys.max() + 1, xs.min(): xs.max() + 1]
+    h = fg.shape[0]
+    widths = fg.sum(axis=1).astype(float)
+    core = float(np.median(widths[int(0.3 * h): int(0.6 * h)]))
+    bust_y = int(np.argmax(widths >= 0.5 * core))
+    if bust_y > 0.35 * h:
+        return None                   # nevyzerá ako šaty (široké až nízko)
+    bust = float(np.median(widths[bust_y: bust_y + max(1, int(0.08 * h))]))
+    rows = widths[bust_y:] / max(bust, 1.0)
+    grid = np.linspace(0, len(rows) - 1, DRESS_SAMPLES).astype(int)
+    profile = _smooth(rows[grid], 3)
+    length = (h - bust_y) / max(bust, 1.0)
+    if not (1.0 <= length <= 8.0) or profile.max() > 5.0:
+        return None
+    smooth = np.convolve(widths, np.ones(5) / 5, "same")
+    lo, hi = bust_y + int(0.05 * h), int(0.6 * h)
+    waist_len = None
+    if hi > lo:
+        waist_y = lo + int(np.argmin(smooth[lo:hi]))
+        if smooth[waist_y] < DRESS_WAIST_MAX * bust and waist_y > bust_y:
+            waist_len = (h - bust_y) / (waist_y - bust_y)
+    return {"profile": profile, "length": float(length), "waist_len": waist_len,
+            "hem": float(profile[-3:].mean())}
+
+
+def describe_dress(dress: dict | None) -> str:
+    """Text do `info`, napr. "šaty (dĺžka 3.4× hruď, lem 2.10× hruď)"."""
+    return f'šaty (dĺžka {dress["length"]:.1f}× hruď, lem {dress["hem"]:.2f}× hruď)' if dress else "-"
+
+
+def _dress_from_product(m: np.ndarray, densepose: np.ndarray, lip: np.ndarray,
+                        atr: np.ndarray, dress: dict) -> str | None:
+    """Šaty: maska v tvare šiat z fotky produktu, priložená na osobu.
+
+    Hruď osoby = šírka trupu (DensePose) v DRESS_BUST_Y výšky trupu. Rozložené
+    šaty sú širšie ako telo spredu (DRESS_FLAT_TO_BODY) → mierka. Od hrude
+    nadol sa kreslí tvar šiat (šírka podľa profilu, sukňa × DRESS_DRAPE) až po
+    lem: ak majú šaty zreteľný pás, lem = hruď + waist_len × (pás − hruď) osoby,
+    inak podľa šírky hrude; najnižšie nad chodidlami. Nad hruďou ostáva maska AutoMaskera, ruky ostávajú tiež
+    (rukáv / holá koža), pôvodné nohavice nad lemom sa pridajú celé (aby z nich
+    nebolo nič vidieť). Pod lemom maska končí, topánky sa nikdy nemaskujú.
+    """
+    torso = np.isin(densepose, DENSEPOSE_TORSO)
+    if not torso.any():
+        return None
+    h, w = m.shape
+    ys = np.nonzero(torso.any(axis=1))[0]
+    top, hip = int(ys.min()), int(ys.max())
+    y0 = int(top + DRESS_BUST_Y * (hip - top))
+    xs = np.nonzero(torso[y0])[0]
+    if xs.size == 0:
+        return None
+    person_bust = float(xs.max() - xs.min() + 1)
+    cx = float(xs.mean())
+    flat = person_bust / DRESS_FLAT_TO_BODY       # šírka rozložených šiat v pixeloch osoby
+    if dress.get("waist_len"):                    # dĺžka podľa pásu (spoľahlivejšie)
+        waist = top + DRESS_WAIST_Y * (hip - top)
+        hem = min(h, int(y0 + dress["waist_len"] * (waist - y0)))
+    else:                                         # šaty bez pásu – podľa šírky hrude
+        hem = min(h, int(y0 + dress["length"] * flat))
+    # Lem najnižšie nad chodidlami (maxi šaty nesmú prekryť topánky)
+    feet = np.nonzero((np.isin(densepose, DENSEPOSE_FEET) | np.isin(lip, (18, 19))
+                       | np.isin(atr, (9, 10))).any(axis=1))[0]
+    feet = feet[feet > y0]
+    if feet.size:
+        hem = min(hem, int(feet.min()))
+
+    shape = np.zeros_like(m)
+    rows = np.arange(y0, hem)
+    s = (rows - y0) / max(1, hem - y0)
+    ratio = np.interp(s, np.linspace(0, 1, len(dress["profile"])), dress["profile"])
+    half = np.maximum(ratio * flat * DRESS_DRAPE, person_bust) / 2 + DRESS_MARGIN * person_bust
+    for y, hw in zip(rows, half):
+        shape[y, max(0, int(cx - hw)): min(w, int(cx + hw) + 1)] = True
+
+    arms = cv2.dilate(np.isin(densepose, DENSEPOSE_ARMS).astype(np.uint8), _kernel((w, h), 60)) > 0
+    pants = np.isin(lip, SCHP_LIP_PANTS) | np.isin(atr, SCHP_ATR_PANTS)
+    pants = cv2.dilate(pants.astype(np.uint8), _kernel((w, h), 100)) > 0
+    shoes = np.isin(lip, (18, 19)) | np.isin(atr, (9, 10))
+
+    above = np.zeros_like(m)
+    above[:y0] = True
+    new = (m & above) | shape | (m & arms) | pants
+    new[hem:] = False
+    new &= ~shoes
+    m[:] = new
+    return f"šaty: tvar z fotky (lem {hem / h:.0%} výšky)"
 
 
 def _runs(row: np.ndarray) -> list[tuple[int, int]]:
@@ -286,6 +399,7 @@ def adjust_mask(
     parts: dict,
     cloth_type: str,
     pants_fit: dict | None = None,
+    dress_fit: dict | None = None,
 ) -> tuple[Image.Image, list[str], list[str]]:
     """Upraví masku AutoMaskera. `parts` = výstup AutoMaskera (densepose, schp_lip, schp_atr).
 
@@ -318,9 +432,12 @@ def adjust_mask(
         changes.append(f"nohavice rozšírené (+{gain:.0%})")
         return Image.fromarray((m * 255).astype(np.uint8)), [], changes
 
-    # 1) Šaty: tvar tela namiesto siluety AutoMaskera
-    if cloth_type == "overall" and (change := _dress_shape(m, densepose)):
-        changes.append(change)
+    # 1) Šaty: tvar šiat z fotky produktu; ak nie je, tvar tela namiesto siluety AutoMaskera
+    if cloth_type == "overall":
+        change = _dress_from_product(m, densepose, lip, atr, dress_fit) if dress_fit else None
+        change = change or _dress_shape(m, densepose)
+        if change:
+            changes.append(change)
 
     # 2) Ochrana dlaní (holé ruky sa nechránia – model môže nakresliť dlhý rukáv)
     kernel = _kernel(size, 250)       # rovnaká veľkosť ako v AutoMaskeri
